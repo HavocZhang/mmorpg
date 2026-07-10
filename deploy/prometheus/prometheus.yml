@@ -1,0 +1,67 @@
+# =============================================================================
+# Prometheus 抓取配置 — Rust MMO Gateway
+# =============================================================================
+# 部署: 放到 prometheus 容器或服务的 prometheus.yml 中
+# =============================================================================
+
+global:
+  scrape_interval: 15s          # 默认 15 秒抓取一次
+  evaluation_interval: 15s      # 规则评估间隔
+  external_labels:
+    cluster: "mmo-gateway"
+    env: "prod"
+
+# ---------- 告警规则文件 ----------
+rule_files:
+  - "alerts/*.yml"
+
+# ---------- 抓取目标 ----------
+scrape_configs:
+  # --- 网关节点 1 ---
+  - job_name: "gateway-node-1"
+    static_configs:
+      - targets: ["gate-prod-01:9090"]
+        labels:
+          node: "gate-prod-01"
+          node_id: "1"
+    metrics_path: /metrics
+    scrape_interval: 10s        # 网关指标 10 秒抓取
+
+  # --- 网关节点 2 ---
+  - job_name: "gateway-node-2"
+    static_configs:
+      - targets: ["gate-prod-02:9090"]
+        labels:
+          node: "gate-prod-02"
+          node_id: "2"
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # --- 网关节点 3 ---
+  - job_name: "gateway-node-3"
+    static_configs:
+      - targets: ["gate-prod-03:9090"]
+        labels:
+          node: "gate-prod-03"
+          node_id: "3"
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # --- Node Exporter (主机指标) ---
+  - job_name: "node-exporter"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+    scrape_interval: 15s
+
+  # --- Redis Exporter ---
+  - job_name: "redis-exporter"
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+    scrape_interval: 15s
+
+  # --- Mock 逻辑服 ---
+  - job_name: "logic-server"
+    static_configs:
+      - targets: ["logic-server:50052"]
+    metrics_path: /metrics
+    scrape_interval: 15s

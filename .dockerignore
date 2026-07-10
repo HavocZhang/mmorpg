@@ -1,0 +1,36 @@
+# Rust MMO Gateway — .dockerignore
+# Reduce build context size for faster Docker builds
+
+target/
+target_test/
+target_unit/
+**/target/
+
+# Logs and reports
+*.log
+*.pid
+*_report.html
+bench_output.txt
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Environment files (use config templates instead)
+.env
+.env.dev
+.env.prod
+
+# Web client (not needed in Docker image)
+web-client/
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore

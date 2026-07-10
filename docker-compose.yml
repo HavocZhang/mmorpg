@@ -1,0 +1,93 @@
+# =============================================================================
+# Rust MMO Gateway — Docker Compose 开发/测试环境
+# =============================================================================
+# 一键启动: docker-compose up -d
+# 包含: 网关 + Redis + Mock逻辑服
+# =============================================================================
+
+version: "3.8"
+
+services:
+  # ---------- Redis ----------
+  redis:
+    image: redis:7-alpine
+    container_name: mmo-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    networks:
+      - mmo-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ---------- Mock gRPC Logic Server ----------
+  logic-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mmo-logic-server
+    restart: unless-stopped
+    command: ["/app/logic-server"]
+    environment:
+      - GRPC_LISTEN_ADDR=0.0.0.0:50051
+      - RUST_LOG=info
+    ports:
+      - "50051:50051"
+    networks:
+      - mmo-net
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ---------- Gateway ----------
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mmo-gateway
+    restart: unless-stopped
+    env_file:
+      - .env.dev.example
+    environment:
+      - GATE_TCP_BIND=0.0.0.0
+      - GATE_HTTP_BIND=0.0.0.0
+      - REDIS_URL=redis://redis:6379
+      - GRPC_LOGIC_ENDPOINTS=grpc://logic-server:50051
+      - RUST_LOG=info
+    ports:
+      - "7888:7888"   # TCP game traffic
+      - "9090:9090"   # HTTP admin/monitoring
+    volumes:
+      - gateway-logs:/app/logs
+    networks:
+      - mmo-net
+    depends_on:
+      redis:
+        condition: service_healthy
+      logic-server:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:9090/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
+
+volumes:
+  redis-data:
+    driver: local
+  gateway-logs:
+    driver: local
+
+networks:
+  mmo-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

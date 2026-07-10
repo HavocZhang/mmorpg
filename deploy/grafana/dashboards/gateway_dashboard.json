@@ -1,0 +1,467 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Rust MMO Gateway - Production Monitoring Dashboard",
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "collapsed": false,
+      "datasource": null,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "概览",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "title": "在线连接数",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "id": 1,
+      "targets": [
+        {
+          "expr": "sum(gate_connections)",
+          "legendFormat": "总连接数",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "green", "value": 1000 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto"
+      }
+    },
+    {
+      "datasource": "Prometheus",
+      "title": "接收消息速率",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "sum(rate(gate_msgs_received_total[1m]))",
+          "legendFormat": "msg/s",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 1000 },
+              { "color": "green", "value": 10000 }
+            ]
+          },
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "datasource": "Prometheus",
+      "title": "发送消息速率",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "id": 3,
+      "targets": [
+        {
+          "expr": "sum(rate(gate_msgs_sent_total[1m]))",
+          "legendFormat": "msg/s",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 1000 },
+              { "color": "green", "value": 10000 }
+            ]
+          },
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "datasource": "Prometheus",
+      "title": "合包压缩率",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "id": 4,
+      "targets": [
+        {
+          "expr": "(1 - sum(rate(gate_merge_total_flushes[5m])) / clamp_min(sum(rate(gate_merge_total_packets[5m])), 1)) * 100",
+          "legendFormat": "压缩率%",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "green", "value": 70 }
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        }
+      }
+    },
+    {
+      "datasource": "Prometheus",
+      "title": "内存使用",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "id": 5,
+      "targets": [
+        {
+          "expr": "sum(gate_process_memory_bytes) / 1048576",
+          "legendFormat": "MB",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 200 },
+              { "color": "red", "value": 500 }
+            ]
+          },
+          "unit": "MB"
+        }
+      }
+    },
+    {
+      "datasource": "Prometheus",
+      "title": "运行时间",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "id": 6,
+      "targets": [
+        {
+          "expr": "max(gate_uptime_seconds) / 3600",
+          "legendFormat": "小时",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "green", "value": 24 }
+            ]
+          },
+          "unit": "h"
+        }
+      }
+    },
+    {
+      "collapsed": false,
+      "datasource": null,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 101,
+      "title": "吞吐量 & 延迟",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "title": "消息收发速率",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "id": 10,
+      "targets": [
+        {
+          "expr": "rate(gate_msgs_received_total[1m])",
+          "legendFormat": "{{ $labels.node }} 接收",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(gate_msgs_sent_total[1m])",
+          "legendFormat": "{{ $labels.node }} 发送",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10 },
+          "unit": "msg/s"
+        }
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } }
+    },
+    {
+      "datasource": "Prometheus",
+      "title": "P99 消息延迟",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "id": 11,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(gate_msg_latency_ms_bucket[5m])) by (le, node))",
+          "legendFormat": "{{ node }} P99",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(gate_msg_latency_ms_bucket[5m])) by (le, node))",
+          "legendFormat": "{{ node }} P50",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10 },
+          "unit": "ms",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "red", "value": 100 }
+            ]
+          }
+        }
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } }
+    },
+    {
+      "collapsed": false,
+      "datasource": null,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 102,
+      "title": "连接 & Session",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "title": "连接数趋势",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "id": 20,
+      "targets": [
+        {
+          "expr": "gate_connections",
+          "legendFormat": "{{ $labels.node }} 在线连接",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 20 },
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "datasource": "Prometheus",
+      "title": "Session 踢出 & 限流",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "id": 21,
+      "targets": [
+        {
+          "expr": "rate(gate_session_kicks_total[5m])",
+          "legendFormat": "{{ $labels.node }} 踢出 ({{ $labels.reason }})",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(gate_rate_limit_hits_total[5m])",
+          "legendFormat": "{{ $labels.node }} 限流 ({{ $labels.scope }})",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10 },
+          "unit": "ops"
+        }
+      }
+    },
+    {
+      "collapsed": false,
+      "datasource": null,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "id": 103,
+      "title": "合包 & 内存",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "title": "合包压缩率趋势",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "id": 30,
+      "targets": [
+        {
+          "expr": "(1 - rate(gate_merge_total_flushes[5m]) / clamp_min(rate(gate_merge_total_packets[5m]), 1)) * 100",
+          "legendFormat": "{{ $labels.node }} 压缩率%",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 20 },
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "green", "value": 70 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "datasource": "Prometheus",
+      "title": "内存使用趋势",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "id": 31,
+      "targets": [
+        {
+          "expr": "gate_process_memory_bytes / 1048576",
+          "legendFormat": "{{ $labels.node }} 内存 MB",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 20 },
+          "unit": "MB",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 200 },
+              { "color": "red", "value": 500 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "collapsed": false,
+      "datasource": null,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "id": 104,
+      "title": "错误 & 安全",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "title": "解码错误",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 33 },
+      "id": 40,
+      "targets": [
+        {
+          "expr": "rate(gate_decode_errors_total[5m])",
+          "legendFormat": "{{ $labels.node }} {{ $labels.type }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "bars", "fillOpacity": 50 },
+          "unit": "errors/s"
+        }
+      }
+    },
+    {
+      "datasource": "Prometheus",
+      "title": "gRPC 上游错误",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 33 },
+      "id": 41,
+      "targets": [
+        {
+          "expr": "rate(gate_grpc_upstream_errors_total[5m])",
+          "legendFormat": "{{ $labels.node }} {{ $labels.endpoint }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "bars", "fillOpacity": 50 },
+          "unit": "errors/s"
+        }
+      }
+    },
+    {
+      "datasource": "Prometheus",
+      "title": "IP 黑名单数量",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 33 },
+      "id": 42,
+      "targets": [
+        {
+          "expr": "gate_blacklist_count",
+          "legendFormat": "{{ $labels.node }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "red", "value": 50 }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 27,
+  "style": "dark",
+  "tags": ["mmo", "gateway", "rust"],
+  "templating": {
+    "list": []
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Rust MMO Gateway — Production Dashboard",
+  "uid": "mmo-gateway-prod",
+  "version": 1
+}

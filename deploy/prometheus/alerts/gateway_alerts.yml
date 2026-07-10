@@ -1,0 +1,149 @@
+# =============================================================================
+# Prometheus 告警规则 — Rust MMO Gateway
+# =============================================================================
+# 覆盖: 连接异常、吞吐下降、丢包、内存泄漏、合包退化、进程宕机
+# =============================================================================
+
+groups:
+  # ---------- 连接与会话告警 ----------
+  - name: gateway_connection_alerts
+    rules:
+      - alert: GatewayDown
+        expr: up{job=~"gateway-node-.*"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "网关节点 {{ $labels.node }} 宕机"
+          description: "网关节点 {{ $labels.node }} 已离线超过 1 分钟"
+
+      - alert: GatewayConnectionDrop
+        expr: gate_connections < 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "网关 {{ $labels.node }} 连接数异常低"
+          description: "当前连接数 {{ $value }}，可能存在网络问题"
+
+      - alert: GatewayConnectionSpike
+        expr: increase(gate_connections[5m]) > 500
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "网关 {{ $labels.node }} 连接数激增"
+          description: "5分钟内新增 {{ $value }} 连接，可能遭受 CC 攻击"
+
+  # ---------- 吞吐量告警 ----------
+  - name: gateway_throughput_alerts
+    rules:
+      - alert: GatewayLowThroughput
+        expr: rate(gate_msgs_received_total[1m]) < 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "网关 {{ $labels.node }} 吞吐量过低"
+          description: "当前接收速率 {{ $value }} msg/s，预期 > 100 msg/s"
+
+      - alert: GatewayHighDecodeErrors
+        expr: increase(gate_decode_errors_total[5m]) > 100
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "网关 {{ $labels.node }} 解码错误激增"
+          description: "5分钟内 {{ $value }} 个解码错误，类型: {{ $labels.type }}"
+
+  # ---------- 限流告警 ----------
+  - name: gateway_rate_limit_alerts
+    rules:
+      - alert: GatewayRateLimitTriggered
+        expr: increase(gate_rate_limit_hits_total[5m]) > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "网关 {{ $labels.node }} 限流频繁触发"
+          description: "5分钟内触发 {{ $value }} 次，范围: {{ $labels.scope }}"
+
+      - alert: GatewayGlobalRateLimitNear
+        expr: rate(gate_msgs_received_total[1m]) > 70000
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "网关 {{ $labels.node }} 接近全局限流阈值"
+          description: "当前速率 {{ $value }} msg/s，全局限流 80000 msg/s"
+
+  # ---------- 合包压缩率告警 ----------
+  - name: gateway_merge_alerts
+    rules:
+      - alert: GatewayMergeCompressionLow
+        expr: |
+          (1 - rate(gate_merge_total_flushes[5m]) / clamp_min(rate(gate_merge_total_packets[5m]), 1)) * 100 < 70
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "网关 {{ $labels.node }} 合包压缩率低于门禁"
+          description: "当前压缩率 {{ $value }}%，门禁要求 >= 70%"
+
+  # ---------- 内存告警 ----------
+  - name: gateway_memory_alerts
+    rules:
+      - alert: GatewayHighMemory
+        expr: gate_process_memory_bytes > 536870912  # 512MB
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "网关 {{ $labels.node }} 内存使用过高"
+          description: "当前内存 {{ $value }} bytes ({{ printf \"%.0f\" (float64 $value / 1048576) }} MB)"
+
+      - alert: GatewayMemoryLeak
+        expr: |
+          deriv(gate_process_memory_bytes[1h]) > 0
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "网关 {{ $labels.node }} 疑似内存泄漏"
+          description: "内存持续增长超过 30 分钟"
+
+  # ---------- Session 告警 ----------
+  - name: gateway_session_alerts
+    rules:
+      - alert: GatewaySessionKickSpike
+        expr: increase(gate_session_kicks_total[5m]) > 100
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "网关 {{ $labels.node }} Session 踢出激增"
+          description: "5分钟内踢出 {{ $value }} 个 Session，原因: {{ $labels.reason }}"
+
+  # ---------- gRPC 上游告警 ----------
+  - name: gateway_grpc_alerts
+    rules:
+      - alert: GatewayGrpcUpstreamErrors
+        expr: increase(gate_grpc_upstream_errors_total[5m]) > 50
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "网关 {{ $labels.node }} gRPC 上游错误激增"
+          description: "5分钟内 {{ $value }} 个错误，端点: {{ $labels.endpoint }}"
+
+  # ---------- 延迟告警 ----------
+  - name: gateway_latency_alerts
+    rules:
+      - alert: GatewayHighLatency
+        expr: histogram_quantile(0.99, rate(gate_msg_latency_ms_bucket[5m])) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "网关 {{ $labels.node }} P99 延迟过高"
+          description: "当前 P99 延迟 {{ $value }}ms，门禁要求 < 100ms"

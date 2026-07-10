@@ -52,19 +52,42 @@ impl NodeHeartbeat {
             .map(|d| d.as_secs())
             .unwrap_or(0);
 
-        let key = format!("gate:heartbeat:{}", self.node_id);
-
+        // 1. 更新心跳时间戳
+        let hb_key = format!("gate:heartbeat:{}", self.node_id);
         let _: () = conn
-            .set_ex(&key, timestamp, 10)
+            .set_ex(&hb_key, timestamp, 10)
             .await
             .map_err(|e| GateError::Redis(format!("心跳SET失败: {}", e)))?;
 
-        // 同时刷新节点信息 TTL
+        // 2. 刷新节点信息 TTL
         let node_key = format!("gate:node:{}", self.node_id);
-        let _: () = conn
+        let expired: i64 = conn
             .expire(&node_key, 30)
             .await
             .map_err(|e| GateError::Redis(format!("EXPIRE失败: {}", e)))?;
+
+        // 3. 如果节点信息键已过期（EXPIRE 返回 0），重新注册
+        if expired == 0 {
+            let node_info = crate::cluster::node_register::NodeInfo {
+                node_id: self.node_id,
+                node_name: self.node_name.clone(),
+                addr: self.redis_url.clone(),
+                online_count: 0,
+                started_at: timestamp,
+            };
+            let node_json = serde_json::to_string(&node_info)
+                .map_err(|e| GateError::Redis(format!("节点信息序列化失败: {}", e)))?;
+            let _: () = conn
+                .set_ex(&node_key, &node_json, 30)
+                .await
+                .map_err(|e| GateError::Redis(format!("节点信息重新注册失败: {}", e)))?;
+            // 确保在 gate:nodes SET 中
+            let _: () = conn
+                .sadd("gate:nodes", self.node_id)
+                .await
+                .map_err(|e| GateError::Redis(format!("SADD失败: {}", e)))?;
+            warn!("节点信息已过期，已重新注册: node_id={}", self.node_id);
+        }
 
         Ok(())
     }
