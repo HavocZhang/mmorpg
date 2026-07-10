@@ -542,6 +542,55 @@ async function main() {
   const connDur = ((Date.now() - connStart) / 1000).toFixed(1);
   log(`Phase 1 complete: ${success} connected, ${fail} failed in ${connDur}s (${Math.round(success / parseFloat(connDur))} conn/s)`);
 
+  // ── Phase 1.5: 合包压缩率验证（2分钟高频流量）──────────────────────
+  // 向少量客户端(100)高频发送突发包(每50ms发5个)，模拟团战场景
+  // 使每个客户端的 WriteLoop 在16ms窗口内收到多个包，触发合包
+  const mergeVerifyClients = 100;
+  const mergeVerifyDurationMs = 120000; // 2 minutes
+  const mergeVerifyBurstSize = 5;       // 每次发5个包给同一客户端
+  const mergeVerifyIntervalMs = 50;     // 每50ms发一次
+
+  log(`Phase 1.5: Merge compression verification (${mergeVerifyClients} clients, ${mergeVerifyBurstSize} pkts/burst, ${mergeVerifyIntervalMs}ms interval, ${mergeVerifyDurationMs/1000}s)`);
+  // 先调用 /merge_stats 触发快照基线
+  await new Promise((resolve) => {
+    const req = http.get("http://" + CONFIG.host + ":" + CONFIG.httpPort + "/merge_stats", (res) => {
+      res.on("data", () => {});
+      res.on("end", resolve);
+    });
+    req.on("error", resolve);
+  });
+
+  let mergeClientIdx = 0;
+  const mergeVerifyTimer = setInterval(() => {
+    for (let i = 0; i < mergeVerifyBurstSize; i++) {
+      const client = allClients[mergeClientIdx % mergeVerifyClients];
+      if (client && client.connected) client.sendMessage();
+    }
+    mergeClientIdx++;
+  }, mergeVerifyIntervalMs);
+
+  // 等待合包验证完成
+  await new Promise(r => setTimeout(r, mergeVerifyDurationMs));
+  clearInterval(mergeVerifyTimer);
+
+  // 采集合包验证结果
+  const mergeResult = await new Promise((resolve) => {
+    http.get("http://" + CONFIG.host + ":" + CONFIG.httpPort + "/merge_stats", (res) => {
+      let data = "";
+      res.on("data", (chunk) => data += chunk);
+      res.on("end", () => {
+        try { resolve(JSON.parse(data)); } catch { resolve({}); }
+      });
+    }).on("error", () => resolve({}));
+  });
+  log(`Phase 1.5 result: recent_rate=${mergeResult.recent_compression_rate_pct || "N/A"}% recent_avg=${mergeResult.recent_avg_packets_per_flush || "N/A"} pkts/flush (target: >=70%)`);
+  if (parseFloat(mergeResult.recent_compression_rate_pct || "0") >= 70) {
+    log("  ✅ Merge compression gate PASSED (>=70%)");
+  } else {
+    log(`  ⚠️ Merge compression rate ${mergeResult.recent_compression_rate_pct || "N/A"}% (below 70% target)`);
+  }
+
+  // ── Phase 2: 长稳测试（低频心跳流量）──────────────────────────────
   // 全局消息定时器（替代每客户端定时器）
   log(`Phase 2: Running for ${CONFIG.durationMin} minutes (global msg interval: ${CONFIG.globalMsgIntervalMs}ms)`);
   let msgClientIdx = 0;

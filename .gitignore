@@ -24,6 +24,7 @@ Thumbs.db
 # Logs
 *.log
 logs/
+logs_*.txt
 
 # Web client
 web-client/node_modules/

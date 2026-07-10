@@ -213,16 +213,21 @@ async fn remove_blacklist_handler(
 
 /// GET /merge_stats - 合包压缩率统计
 async fn merge_stats_handler() -> impl Responder {
-    let (packets, flushes, rate) = crate::io_engine::packet_merge::merge_stats();
-    let bytes_sent = crate::io_engine::packet_merge::MERGE_TOTAL_BYTES_SENT
-        .load(std::sync::atomic::Ordering::Relaxed);
+    let snap = crate::io_engine::packet_merge::merge_stats_with_recent();
     HttpResponse::Ok().json(serde_json::json!({
-        "total_packets_merged": packets,
-        "total_flush_calls": flushes,
-        "compression_rate_pct": format!("{:.2}", rate),
-        "total_bytes_sent": bytes_sent,
-        "avg_packets_per_flush": if flushes > 0 { packets / flushes } else { 0 },
+        "total_packets_merged": snap.total_packets,
+        "total_flush_calls": snap.total_flushes,
+        "total_bytes_sent": snap.total_bytes,
+        "compression_rate_pct": format!("{:.2}", snap.cumulative_rate),
+        "avg_packets_per_flush": if snap.total_flushes > 0 { snap.total_packets / snap.total_flushes } else { 0 },
+        "recent_packets": snap.recent_packets,
+        "recent_flushes": snap.recent_flushes,
+        "recent_compression_rate_pct": format!("{:.2}", snap.recent_rate),
+        "recent_avg_packets_per_flush": if snap.recent_flushes > 0 { snap.recent_packets / snap.recent_flushes } else { 0 },
+        "recent_bytes_per_sec": snap.bytes_per_sec,
+        "recent_window_secs": snap.elapsed_secs,
         "gate_target": ">=70%",
-        "gate_pass": rate >= 70.0,
+        "gate_pass": snap.cumulative_rate >= 70.0,
+        "recent_gate_pass": snap.recent_rate >= 70.0,
     }))
 }

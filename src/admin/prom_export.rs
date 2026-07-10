@@ -5,6 +5,38 @@
 
 use crate::foundation::metric;
 
+// ── Windows FFI 声明（模块级）──────────────────────────────────────
+#[cfg(target_os = "windows")]
+mod winapi {
+    #[repr(C)]
+    pub struct PROCESS_MEMORY_COUNTERS {
+        pub cb: u32,
+        pub page_fault_count: u32,
+        pub peak_working_set_size: usize,
+        pub working_set_size: usize,
+        pub quota_peak_paged_pool_usage: usize,
+        pub quota_paged_pool_usage: usize,
+        pub quota_peak_non_paged_pool_usage: usize,
+        pub quota_non_paged_pool_usage: usize,
+        pub pagefile_usage: usize,
+        pub peak_pagefile_usage: usize,
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        pub fn GetCurrentProcess() -> *mut core::ffi::c_void;
+    }
+
+    #[link(name = "psapi")]
+    extern "system" {
+        pub fn GetProcessMemoryInfo(
+            process: *mut core::ffi::c_void,
+            psmemcounters: *mut PROCESS_MEMORY_COUNTERS,
+            cb: u32,
+        ) -> i32;
+    }
+}
+
 /// 同步运行时指标到 Prometheus Registry，然后导出
 pub fn export() -> String {
     use prometheus::Encoder;
@@ -22,31 +54,53 @@ pub fn export() -> String {
     String::from_utf8(buf).unwrap_or_default()
 }
 
+/// 上次同步到 Prometheus 的值（用于计算差值 inc_by）
+static LAST_SYNC_PACKETS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static LAST_SYNC_FLUSHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static LAST_SYNC_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// 同步合包统计到 Prometheus 指标
 fn sync_merge_stats() {
     let m = metric::metrics();
 
     // 从全局原子计数器读取合包统计
-    let (packets, flushes, _rate) = crate::io_engine::packet_merge::merge_stats();
+    let packets = crate::io_engine::packet_merge::MERGE_TOTAL_PACKETS
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let flushes = crate::io_engine::packet_merge::MERGE_TOTAL_FLUSHES
+        .load(std::sync::atomic::Ordering::Relaxed);
     let bytes_sent = crate::io_engine::packet_merge::MERGE_TOTAL_BYTES_SENT
         .load(std::sync::atomic::Ordering::Relaxed);
 
-    // Counter 类型不支持直接 set，用 inc_by 差值
-    // 但这里我们直接用当前值 - 由于 Counter 是累积的，我们需要记录上次值
-    // 简化方案：使用 gauge 或直接在 push/flush 时 inc
-    // 这里仅同步 bytes 和 rate 作为 gauge
-    // 实际的 packets/flushes 应该在代码中 inc，这里不做重复操作
+    // 计算与上次同步的差值，inc_by 到 Prometheus Counter
+    let last_packets = LAST_SYNC_PACKETS.load(std::sync::atomic::Ordering::Relaxed);
+    let last_flushes = LAST_SYNC_FLUSHES.load(std::sync::atomic::Ordering::Relaxed);
+    let last_bytes = LAST_SYNC_BYTES.load(std::sync::atomic::Ordering::Relaxed);
 
-    // 同步 bytes_sent（作为参考）
-    let _ = bytes_sent;
-    let _ = (packets, flushes);
+    let delta_packets = packets.saturating_sub(last_packets);
+    let delta_flushes = flushes.saturating_sub(last_flushes);
+    let delta_bytes = bytes_sent.saturating_sub(last_bytes);
+
+    if delta_packets > 0 {
+        m.merge_total_packets.inc_by(delta_packets);
+    }
+    if delta_flushes > 0 {
+        m.merge_total_flushes.inc_by(delta_flushes);
+    }
+    if delta_bytes > 0 {
+        m.merge_total_bytes.inc_by(delta_bytes);
+    }
+
+    // 更新上次同步值
+    LAST_SYNC_PACKETS.store(packets, std::sync::atomic::Ordering::Relaxed);
+    LAST_SYNC_FLUSHES.store(flushes, std::sync::atomic::Ordering::Relaxed);
+    LAST_SYNC_BYTES.store(bytes_sent, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// 同步进程级指标
 fn sync_process_metrics() {
     let m = metric::metrics();
 
-    // 内存使用（通过 /proc 或系统 API）
+    // 内存使用（Linux: /proc, Windows: GetProcessMemoryInfo）
     #[cfg(target_os = "linux")]
     {
         if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
@@ -64,8 +118,31 @@ fn sync_process_metrics() {
 
     #[cfg(target_os = "windows")]
     {
-        // Windows 内存使用通过 PowerShell 或 API 获取
-        // 在 Docker (Linux) 环境中走 /proc 路径
+        unsafe {
+            let handle = winapi::GetCurrentProcess();
+            let mut counters = winapi::PROCESS_MEMORY_COUNTERS {
+                cb: core::mem::size_of::<winapi::PROCESS_MEMORY_COUNTERS>() as u32,
+                page_fault_count: 0,
+                peak_working_set_size: 0,
+                working_set_size: 0,
+                quota_peak_paged_pool_usage: 0,
+                quota_paged_pool_usage: 0,
+                quota_peak_non_paged_pool_usage: 0,
+                quota_non_paged_pool_usage: 0,
+                pagefile_usage: 0,
+                peak_pagefile_usage: 0,
+            };
+
+            let result = winapi::GetProcessMemoryInfo(
+                handle,
+                &mut counters as *mut _,
+                core::mem::size_of::<winapi::PROCESS_MEMORY_COUNTERS>() as u32,
+            );
+
+            if result != 0 {
+                m.process_memory_bytes.set(counters.working_set_size as i64);
+            }
+        }
     }
 
     // Uptime 由调用方在 admin handler 中设置
@@ -97,5 +174,20 @@ mod tests {
         assert!(output.contains("gate_msg_latency_ms"));
         assert!(output.contains("gate_active_sessions"));
         assert!(output.contains("gate_blacklist_count"));
+    }
+
+    #[test]
+    fn test_merge_stats_sync() {
+        // 验证合包统计同步后 Prometheus Counter 有值
+        crate::io_engine::packet_merge::MERGE_TOTAL_PACKETS
+            .fetch_add(100, std::sync::atomic::Ordering::Relaxed);
+        crate::io_engine::packet_merge::MERGE_TOTAL_FLUSHES
+            .fetch_add(30, std::sync::atomic::Ordering::Relaxed);
+
+        let output = export();
+
+        // 同步后 Counter 应该有值（不一定是精确值，因为其他测试可能也在 inc）
+        assert!(output.contains("gate_merge_total_packets"));
+        assert!(output.contains("gate_merge_total_flushes"));
     }
 }

@@ -5,7 +5,7 @@
 //! 目标：小包合并压缩率 ≥ 70%
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::crypto::aes_gcm::AesGcmCipher;
 use crate::protocol::packet_struct::Packet;
@@ -16,7 +16,15 @@ pub static MERGE_TOTAL_PACKETS: AtomicU64 = AtomicU64::new(0);
 pub static MERGE_TOTAL_FLUSHES: AtomicU64 = AtomicU64::new(0);
 pub static MERGE_TOTAL_BYTES_SENT: AtomicU64 = AtomicU64::new(0);
 
-/// 获取合包压缩率统计
+/// 滑动窗口快照（用于计算近实时压缩率）
+/// 每次 merge_stats_with_recent() 被调用时，记录当前累积值和时间戳
+/// 下次调用时通过差值计算近实时压缩率
+static SNAPSHOT_PACKETS: AtomicU64 = AtomicU64::new(0);
+static SNAPSHOT_FLUSHES: AtomicU64 = AtomicU64::new(0);
+static SNAPSHOT_BYTES: AtomicU64 = AtomicU64::new(0);
+static SNAPSHOT_TIME: AtomicU64 = AtomicU64::new(0);
+
+/// 获取合包压缩率统计（累积值）
 pub fn merge_stats() -> (u64, u64, f64) {
     let packets = MERGE_TOTAL_PACKETS.load(Ordering::Relaxed);
     let flushes = MERGE_TOTAL_FLUSHES.load(Ordering::Relaxed);
@@ -28,11 +36,100 @@ pub fn merge_stats() -> (u64, u64, f64) {
     (packets, flushes, compression_rate)
 }
 
+/// 获取合包统计（累积 + 近实时）
+///
+/// 返回 (total_packets, total_flushes, cumulative_rate,
+///        recent_packets, recent_flushes, recent_rate,
+///        recent_bytes_per_sec)
+///
+/// 近实时值基于上次调用到现在的差值，适合 Prometheus 定期抓取
+pub fn merge_stats_with_recent() -> MergeStatsSnapshot {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let total_packets = MERGE_TOTAL_PACKETS.load(Ordering::Relaxed);
+    let total_flushes = MERGE_TOTAL_FLUSHES.load(Ordering::Relaxed);
+    let total_bytes = MERGE_TOTAL_BYTES_SENT.load(Ordering::Relaxed);
+
+    let prev_packets = SNAPSHOT_PACKETS.load(Ordering::Relaxed);
+    let prev_flushes = SNAPSHOT_FLUSHES.load(Ordering::Relaxed);
+    let prev_bytes = SNAPSHOT_BYTES.load(Ordering::Relaxed);
+    let prev_time = SNAPSHOT_TIME.load(Ordering::Relaxed);
+
+    // 计算累积压缩率
+    let cumulative_rate = if total_packets > 0 {
+        (1.0 - total_flushes as f64 / total_packets as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    // 计算近实时压缩率
+    let recent_packets = total_packets.saturating_sub(prev_packets);
+    let recent_flushes = total_flushes.saturating_sub(prev_flushes);
+    let recent_bytes = total_bytes.saturating_sub(prev_bytes);
+    let elapsed = now.saturating_sub(prev_time);
+
+    let recent_rate = if recent_packets > 0 {
+        (1.0 - recent_flushes as f64 / recent_packets as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    let bytes_per_sec = if elapsed > 0 {
+        recent_bytes / elapsed
+    } else {
+        0
+    };
+
+    // 更新快照
+    SNAPSHOT_PACKETS.store(total_packets, Ordering::Relaxed);
+    SNAPSHOT_FLUSHES.store(total_flushes, Ordering::Relaxed);
+    SNAPSHOT_BYTES.store(total_bytes, Ordering::Relaxed);
+    SNAPSHOT_TIME.store(now, Ordering::Relaxed);
+
+    MergeStatsSnapshot {
+        total_packets,
+        total_flushes,
+        total_bytes,
+        cumulative_rate,
+        recent_packets,
+        recent_flushes,
+        recent_rate,
+        bytes_per_sec,
+        elapsed_secs: elapsed,
+    }
+}
+
+/// 合包统计快照
+pub struct MergeStatsSnapshot {
+    pub total_packets: u64,
+    pub total_flushes: u64,
+    pub total_bytes: u64,
+    pub cumulative_rate: f64,
+    pub recent_packets: u64,
+    pub recent_flushes: u64,
+    pub recent_rate: f64,
+    pub bytes_per_sec: u64,
+    pub elapsed_secs: u64,
+}
+
 /// 重置统计（测试用）
 pub fn reset_merge_stats() {
     MERGE_TOTAL_PACKETS.store(0, Ordering::Relaxed);
     MERGE_TOTAL_FLUSHES.store(0, Ordering::Relaxed);
     MERGE_TOTAL_BYTES_SENT.store(0, Ordering::Relaxed);
+    SNAPSHOT_PACKETS.store(0, Ordering::Relaxed);
+    SNAPSHOT_FLUSHES.store(0, Ordering::Relaxed);
+    SNAPSHOT_BYTES.store(0, Ordering::Relaxed);
+    SNAPSHOT_TIME.store(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+        Ordering::Relaxed,
+    );
 }
 
 /// 小包合并器
