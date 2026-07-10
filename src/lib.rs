@@ -11,6 +11,7 @@ pub mod grpc_router;
 pub mod io_engine;
 pub mod network;
 pub mod protocol;
+pub mod scene;
 pub mod security;
 pub mod session;
 

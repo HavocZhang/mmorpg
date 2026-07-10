@@ -8,4 +8,5 @@ pub mod protocol_steps;
 pub mod message_steps;
 pub mod security_steps;
 pub mod cluster_steps;
+pub mod scene_steps;
 pub mod shutdown_steps;

@@ -100,6 +100,10 @@ name = "tdd_protocol"
 path = "tests/tdd_unit/protocol_tests.rs"
 
 [[test]]
+name = "tdd_scene"
+path = "tests/tdd_unit/scene_tests.rs"
+
+[[test]]
 name = "tdd_exception"
 path = "tests/tdd_exception/exception_tests.rs"
 
@@ -126,6 +130,11 @@ path = "src/bin/login_test.rs"
 [[bin]]
 name = "e2e-login-test"
 path = "src/bin/e2e_login_test.rs"
+
+# 场景服二进制
+[[bin]]
+name = "scene-server"
+path = "src/bin/scene_server.rs"
 
 # 性能压测入口配置
 [[bench]]

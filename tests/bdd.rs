@@ -14,6 +14,135 @@
 #[path = "bdd/steps/mod.rs"]
 mod steps;
 
+/// 场景服模拟状态（BDD 测试用）
+#[derive(Debug, Default)]
+pub struct SceneState {
+    pub maps: std::collections::HashMap<String, SceneMapData>,
+    pub player_map: std::collections::HashMap<u64, String>,
+    pub player_pos: std::collections::HashMap<u64, (f64, f64)>,
+    pub aoi_radius: f64,
+    pub max_speed: f64,
+    pub npcs: std::collections::HashMap<String, Vec<SceneNpcData>>,
+    pub enter_events: Vec<(u64, u64)>,
+    pub leave_events: Vec<(u64, u64)>,
+    pub move_broadcasts: Vec<(u64, u64)>,
+    pub move_confirmations: Vec<u64>,
+    pub speed_violations: Vec<u64>,
+    pub boundary_violations: Vec<u64>,
+    pub last_error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SceneMapData {
+    pub name: String,
+    pub width: f64,
+    pub height: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct SceneNpcData {
+    pub id: u64,
+    pub name: String,
+    pub x: f64,
+    pub y: f64,
+}
+
+impl SceneState {
+    pub fn new() -> Self {
+        Self { aoi_radius: 300.0, max_speed: 800.0, ..Default::default() }
+    }
+
+    pub fn load_map(&mut self, name: &str, w: f64, h: f64) {
+        self.maps.insert(name.into(), SceneMapData { name: name.into(), width: w, height: h });
+    }
+
+    pub fn join_map(&mut self, uid: u64, map_name: &str, x: f64, y: f64) -> Result<(), String> {
+        let map = self.maps.get(map_name).ok_or("地图不存在".to_string())?;
+        let cx = x.max(0.0).min(map.width);
+        let cy = y.max(0.0).min(map.height);
+        self.player_map.insert(uid, map_name.into());
+        self.player_pos.insert(uid, (cx, cy));
+        Ok(())
+    }
+
+    pub fn leave_map(&mut self, uid: u64) {
+        self.player_map.remove(&uid);
+        self.player_pos.remove(&uid);
+    }
+
+    pub fn move_player(&mut self, uid: u64, x: f64, y: f64, dt: f64) -> Result<(), String> {
+        let mname = self.player_map.get(&uid).ok_or("玩家不在地图中")?.clone();
+        let map = self.maps.get(&mname).unwrap();
+        let cx = x.max(0.0).min(map.width);
+        let cy = y.max(0.0).min(map.height);
+        if cx != x || cy != y { self.boundary_violations.push(uid); }
+
+        // 保存移动前位置（用于AOI离开检测）
+        let old_pos = self.player_pos.get(&uid).copied();
+
+        if let Some(&(ox, oy)) = self.player_pos.get(&uid) {
+            let dist = ((cx - ox).powi(2) + (cy - oy).powi(2)).sqrt();
+            if dt > 0.0 && dist / dt > self.max_speed {
+                self.speed_violations.push(uid);
+                let r = self.max_speed * dt / dist;
+                self.player_pos.insert(uid, (ox + (cx - ox) * r, oy + (cy - oy) * r));
+                return Ok(());
+            }
+        }
+        self.player_pos.insert(uid, (cx, cy));
+        self.move_confirmations.push(uid);
+
+        let uids: Vec<u64> = self.player_map.iter()
+            .filter(|(_, m)| m.as_str() == mname.as_str()).map(|(u, _)| *u).collect();
+        for &oid in &uids {
+            if oid == uid { continue; }
+            if let Some(&(ox, oy)) = self.player_pos.get(&oid) {
+                let new_dist = ((cx - ox).powi(2) + (cy - oy).powi(2)).sqrt();
+                let was_in_range = old_pos.map_or(false, |(px, py)| {
+                    ((px - ox).powi(2) + (py - oy).powi(2)).sqrt() <= self.aoi_radius
+                });
+                if new_dist <= self.aoi_radius {
+                    self.enter_events.push((uid, oid));
+                    self.enter_events.push((oid, uid));
+                    self.move_broadcasts.push((uid, oid));
+                } else if was_in_range {
+                    // 离开AOI：从在范围内变为在范围外
+                    self.leave_events.push((uid, oid));
+                    self.leave_events.push((oid, uid));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn teleport(&mut self, uid: u64, map_name: &str, x: f64, y: f64) -> Result<(), String> {
+        self.leave_map(uid);
+        self.join_map(uid, map_name, x, y)
+    }
+
+    pub fn spawn_npc(&mut self, m: &str, id: u64, name: &str, x: f64, y: f64) {
+        self.npcs.entry(m.into()).or_default().push(SceneNpcData { id, name: name.into(), x, y });
+    }
+
+    pub fn get_visible_npcs(&self, uid: u64) -> Vec<String> {
+        let m = match self.player_map.get(&uid) { Some(m) => m, None => return vec![] };
+        let (px, py) = match self.player_pos.get(&uid) { Some(p) => *p, None => return vec![] };
+        self.npcs.get(m).unwrap_or(&vec![]).iter()
+            .filter(|n| ((px - n.x).powi(2) + (py - n.y).powi(2)).sqrt() <= self.aoi_radius)
+            .map(|n| n.name.clone()).collect()
+    }
+
+    pub fn is_in_range(&self, a: u64, b: u64) -> bool {
+        let p1 = match self.player_pos.get(&a) { Some(p) => *p, None => return false };
+        let p2 = match self.player_pos.get(&b) { Some(p) => *p, None => return false };
+        ((p1.0 - p2.0).powi(2) + (p1.1 - p2.1).powi(2)).sqrt() <= self.aoi_radius
+    }
+
+    pub fn map_player_count(&self, map_name: &str) -> usize {
+        self.player_map.iter().filter(|(_, m)| m.as_str() == map_name).count()
+    }
+}
+
 use cucumber::World;
 
 #[derive(World)]
@@ -68,6 +197,9 @@ pub struct BddWorld {
     pub shutdown_complete: bool,
     pub notified_logic_server_count: u32,
     pub startup_ready: bool,
+
+    // ── 场景服状态 ──
+    pub scene_state: Option<SceneState>,
 
     // ── 通用 ──
     pub elapsed_seconds: u64,
@@ -140,6 +272,8 @@ impl BddWorld {
             notified_logic_server_count: 0,
             startup_ready: false,
 
+            scene_state: None,
+
             elapsed_seconds: 0,
         }
     }
@@ -201,6 +335,7 @@ impl std::fmt::Debug for BddWorld {
             .field("accepting_new_connections", &self.accepting_new_connections)
             .field("shutdown_complete", &self.shutdown_complete)
             .field("startup_ready", &self.startup_ready)
+            .field("scene_state", &self.scene_state.is_some())
             .finish()
     }
 }
