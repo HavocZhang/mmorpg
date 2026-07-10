@@ -4,11 +4,36 @@
 //! 减少系统调用次数，提升团战场景吞吐量
 //! 目标：小包合并压缩率 ≥ 70%
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::crypto::aes_gcm::AesGcmCipher;
 use crate::protocol::packet_struct::Packet;
 use crate::session::session_struct::PendingMsg;
+
+/// 全局合包统计（所有 WriteLoop 共享）
+pub static MERGE_TOTAL_PACKETS: AtomicU64 = AtomicU64::new(0);
+pub static MERGE_TOTAL_FLUSHES: AtomicU64 = AtomicU64::new(0);
+pub static MERGE_TOTAL_BYTES_SENT: AtomicU64 = AtomicU64::new(0);
+
+/// 获取合包压缩率统计
+pub fn merge_stats() -> (u64, u64, f64) {
+    let packets = MERGE_TOTAL_PACKETS.load(Ordering::Relaxed);
+    let flushes = MERGE_TOTAL_FLUSHES.load(Ordering::Relaxed);
+    let compression_rate = if packets > 0 {
+        (1.0 - flushes as f64 / packets as f64) * 100.0
+    } else {
+        0.0
+    };
+    (packets, flushes, compression_rate)
+}
+
+/// 重置统计（测试用）
+pub fn reset_merge_stats() {
+    MERGE_TOTAL_PACKETS.store(0, Ordering::Relaxed);
+    MERGE_TOTAL_FLUSHES.store(0, Ordering::Relaxed);
+    MERGE_TOTAL_BYTES_SENT.store(0, Ordering::Relaxed);
+}
 
 /// 小包合并器
 pub struct PacketMerge {
@@ -51,6 +76,7 @@ impl PacketMerge {
 
         self.pending.extend_from_slice(&packet_bytes);
         self.packet_count += 1;
+        MERGE_TOTAL_PACKETS.fetch_add(1, Ordering::Relaxed);
     }
 
     /// 尝试刷新（如果窗口已满或手动触发）
@@ -73,6 +99,8 @@ impl PacketMerge {
             return None;
         }
         let data = std::mem::take(&mut self.pending);
+        MERGE_TOTAL_FLUSHES.fetch_add(1, Ordering::Relaxed);
+        MERGE_TOTAL_BYTES_SENT.fetch_add(data.len() as u64, Ordering::Relaxed);
         self.packet_count = 0;
         self.window_start = None;
         Some(data)

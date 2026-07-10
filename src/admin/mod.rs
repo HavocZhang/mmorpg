@@ -86,6 +86,7 @@ pub async fn run_admin_server(
             .route("/blacklist", web::get().to(list_blacklist_handler))
             .route("/blacklist/{ip}", web::post().to(add_blacklist_handler))
             .route("/blacklist/{ip}", web::delete().to(remove_blacklist_handler))
+            .route("/merge_stats", web::get().to(merge_stats_handler))
     })
     .bind(&addr)
     {
@@ -208,4 +209,20 @@ async fn remove_blacklist_handler(
             })
         }
     }
+}
+
+/// GET /merge_stats - 合包压缩率统计
+async fn merge_stats_handler() -> impl Responder {
+    let (packets, flushes, rate) = crate::io_engine::packet_merge::merge_stats();
+    let bytes_sent = crate::io_engine::packet_merge::MERGE_TOTAL_BYTES_SENT
+        .load(std::sync::atomic::Ordering::Relaxed);
+    HttpResponse::Ok().json(serde_json::json!({
+        "total_packets_merged": packets,
+        "total_flush_calls": flushes,
+        "compression_rate_pct": format!("{:.2}", rate),
+        "total_bytes_sent": bytes_sent,
+        "avg_packets_per_flush": if flushes > 0 { packets / flushes } else { 0 },
+        "gate_target": ">=70%",
+        "gate_pass": rate >= 70.0,
+    }))
 }
