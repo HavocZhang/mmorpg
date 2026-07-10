@@ -70,6 +70,11 @@ actix-web = "4"
 # HTTP 客户端（集群测试用）
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 
+# 登录服依赖
+bcrypt = "0.16"
+jsonwebtoken = "9"
+rand = "0.8"
+
 # gRPC 编译
 [build-dependencies]
 tonic-build = "0.12"
@@ -106,6 +111,21 @@ path = "tests/tdd_fuzz/fuzz_tests.rs"
 [[bin]]
 name = "logic-server"
 path = "src/bin/logic_server.rs"
+
+# 登录服二进制
+[[bin]]
+name = "login-server"
+path = "src/bin/login_server.rs"
+
+# 登录服集成测试
+[[bin]]
+name = "login-test"
+path = "src/bin/login_test.rs"
+
+# 登录服端到端测试 (通过网关TCP)
+[[bin]]
+name = "e2e-login-test"
+path = "src/bin/e2e_login_test.rs"
 
 # 性能压测入口配置
 [[bench]]
