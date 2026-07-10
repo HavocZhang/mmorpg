@@ -1,0 +1,25 @@
+# Clippy 静态检查强制规则
+# 零警告提交，以下规则全部强制开启
+
+# 复杂度阈值
+cognitive-complexity-threshold = 30
+too-many-arguments-threshold = 8
+type-complexity-threshold = 250
+single-char-binding-names-threshold = 0
+
+# 禁止使用 std::Mutex（强制使用 DashMap / parking_lot）
+disallowed-methods = [
+    { path = "std::sync::Mutex::lock", reason = "禁止使用 std::Mutex，请使用 DashMap 或 parking_lot" },
+    { path = "std::sync::Mutex::try_lock", reason = "禁止使用 std::Mutex，请使用 DashMap 或 parking_lot" },
+    { path = "std::sync::RwLock::read", reason = "禁止使用 std::RwLock，请使用 DashMap 或 parking_lot" },
+    { path = "std::sync::RwLock::write", reason = "禁止使用 std::RwLock，请使用 DashMap 或 parking_lot" },
+]
+
+# 禁止使用 unwrap / expect（生产代码必须处理错误）
+disallowed-macros = []
+
+# 文档要求
+doc-valid-idents = [
+    "OAuth", "gRPC", "Redis", "TCP", "UDP", "HTTP", "HTTPS",
+    "URL", "URI", "UUID", "JSON", "XML", "AES", "CRC", "GCM",
+]

@@ -1,0 +1,1323 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MMO 游戏世界 - 完整版</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0e17; color: #e0e6ed; overflow: hidden; user-select: none; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #4a5a6a; }
+
+/* ── Login ── */
+#loginScreen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, #1a2332 0%, #0a0e17 100%); z-index: 100; }
+.login-box { background: rgba(30,42,56,0.95); border: 1px solid #3a5068; border-radius: 16px; padding: 40px 48px; width: 400px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+.login-box h1 { font-size: 26px; color: #f0c040; margin-bottom: 6px; letter-spacing: 2px; }
+.login-box .subtitle { font-size: 13px; color: #7a8a9a; margin-bottom: 28px; }
+.login-box input { width: 100%; background: #0d1420; border: 1px solid #3a5068; border-radius: 8px; color: #e0e6ed; padding: 12px 16px; font-size: 15px; outline: none; margin-bottom: 12px; transition: border-color 0.2s; }
+.login-box input:focus { border-color: #f0c040; }
+.login-box button { width: 100%; background: linear-gradient(135deg, #f0c040, #d4a020); border: none; border-radius: 8px; color: #1a1a1a; padding: 12px; font-size: 15px; font-weight: 700; cursor: pointer; transition: transform 0.1s; }
+.login-box button:hover { transform: translateY(-1px); }
+.login-box button:disabled { opacity: 0.5; cursor: not-allowed; }
+.login-error { color: #ff6b6b; font-size: 13px; margin-top: 12px; min-height: 18px; }
+.login-tips { margin-top: 20px; font-size: 12px; color: #4a5a6a; line-height: 1.8; text-align: left; padding: 12px; background: #0d1420; border-radius: 8px; }
+.login-tips strong { color: #7a8a9a; }
+
+/* ── Game Layout ── */
+#gameScreen { display: none; width: 100vw; height: 100vh; }
+.game-layout { display: flex; height: 100vh; }
+
+/* Left: Canvas Area */
+.game-left { flex: 1; display: flex; flex-direction: column; background: #0d1117; }
+.top-bar { display: flex; align-items: center; gap: 12px; padding: 6px 16px; background: #161b22; border-bottom: 1px solid #30363d; height: 48px; flex-shrink: 0; }
+.player-info { display: flex; align-items: center; gap: 8px; }
+.player-avatar { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, #f0c040, #d4a020); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: #1a1a1a; }
+.player-name { font-size: 14px; font-weight: 600; color: #f0c040; }
+.player-level { font-size: 11px; color: #7a8a9a; }
+.bars-container { display: flex; flex-direction: column; gap: 3px; flex: 1; max-width: 240px; }
+.bar-bg { background: #1a1a1a; border-radius: 4px; height: 14px; position: relative; overflow: hidden; border: 1px solid #30363d; }
+.bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+.hp-fill { background: linear-gradient(90deg, #ff4444, #ff6b6b); }
+.mp-fill { background: linear-gradient(90deg, #4488ff, #6ba3ff); }
+.exp-fill { background: linear-gradient(90deg, #f0c040, #ffd966); height: 100%; }
+.bar-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; color: white; font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+.exp-bar { height: 6px; }
+.conn-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #7a8a9a; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; }
+.status-dot.online { background: #44ff88; box-shadow: 0 0 6px #44ff88; }
+.status-dot.offline { background: #ff4444; }
+.status-dot.connecting { background: #f0c040; animation: pulse 1s infinite; }
+@keyframes pulse { 50% { opacity: 0.4; } }
+
+/* Canvas */
+.canvas-wrapper { flex: 1; position: relative; overflow: hidden; background: #0d1117; }
+#gameCanvas { display: block; cursor: crosshair; }
+
+/* Minimap */
+.minimap { position: absolute; top: 8px; right: 8px; width: 180px; height: 140px; background: rgba(13,17,23,0.92); border: 1px solid #30363d; border-radius: 6px; overflow: hidden; z-index: 5; }
+#minimapCanvas { display: block; }
+
+/* Tooltip */
+.tooltip { position: absolute; background: rgba(13,17,23,0.97); border: 1px solid #3a5068; border-radius: 6px; padding: 6px 10px; font-size: 12px; color: #e0e6ed; pointer-events: none; z-index: 10; white-space: nowrap; display: none; }
+.tooltip .tt-name { font-weight: 700; margin-bottom: 2px; }
+.tooltip .tt-hp { color: #ff6b6b; font-size: 11px; }
+.tooltip .tt-level { color: #f0c040; font-size: 11px; }
+
+/* NPC Dialog */
+.npc-dialog { position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%); width: 500px; background: rgba(13,17,23,0.97); border: 1px solid #3a5068; border-radius: 12px; padding: 20px; z-index: 20; display: none; box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
+.npc-dialog .nd-name { font-size: 16px; font-weight: 700; color: #f0c040; margin-bottom: 8px; }
+.npc-dialog .nd-text { font-size: 14px; color: #c0d0e0; line-height: 1.6; margin-bottom: 16px; }
+.npc-dialog .nd-options { display: flex; flex-direction: column; gap: 6px; }
+.npc-dialog .nd-opt { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 8px 14px; font-size: 13px; color: #e0e6ed; cursor: pointer; transition: all 0.15s; }
+.npc-dialog .nd-opt:hover { border-color: #f0c040; background: #1a2332; }
+.npc-dialog .nd-close { position: absolute; top: 8px; right: 12px; font-size: 18px; color: #7a8a9a; cursor: pointer; }
+.npc-dialog .nd-close:hover { color: #ff4444; }
+
+/* Toast notifications */
+.toast-container { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); z-index: 30; display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
+.toast { background: rgba(13,17,23,0.95); border: 1px solid #f0c040; border-radius: 8px; padding: 8px 20px; font-size: 13px; color: #f0c040; animation: toastIn 0.3s, toastOut 0.3s 2.7s; }
+.toast.danger { border-color: #ff4444; color: #ff6b6b; }
+.toast.success { border-color: #44ff88; color: #44ff88; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes toastOut { to { opacity: 0; transform: translateY(-10px); } }
+
+/* Skill Bar */
+.skill-bar { display: flex; gap: 6px; padding: 6px 16px; background: #161b22; border-top: 1px solid #30363d; justify-content: center; height: 60px; flex-shrink: 0; }
+.skill-slot { width: 48px; height: 48px; background: #0d1117; border: 2px solid #30363d; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; position: relative; transition: border-color 0.15s; }
+.skill-slot:hover { border-color: #f0c040; }
+.skill-slot.disabled { opacity: 0.4; }
+.skill-slot .sk-key { position: absolute; top: -6px; left: -6px; background: #30363d; color: #7a8a9a; font-size: 10px; font-weight: 700; border-radius: 4px; padding: 1px 5px; }
+.skill-slot .sk-icon { font-size: 22px; }
+.skill-slot .sk-cost { position: absolute; bottom: -2px; right: 2px; font-size: 9px; color: #6ba3ff; }
+.skill-cooldown { position: absolute; inset: 0; background: rgba(0,0,0,0.7); border-radius: 6px; display: none; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; color: white; }
+
+/* Right Sidebar */
+.game-right { width: 340px; min-width: 340px; background: #0d1117; border-left: 1px solid #30363d; display: flex; flex-direction: column; }
+.tab-bar { display: flex; background: #161b22; border-bottom: 1px solid #30363d; flex-shrink: 0; }
+.tab-btn { flex: 1; padding: 8px 4px; text-align: center; font-size: 11px; font-weight: 600; color: #7a8a9a; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; text-transform: uppercase; letter-spacing: 0.03em; }
+.tab-btn:hover { color: #c0d0e0; }
+.tab-btn.active { color: #f0c040; border-bottom-color: #f0c040; }
+.tab-content { flex: 1; overflow-y: auto; display: none; }
+.tab-content.active { display: block; }
+
+/* Chat Tab */
+.chat-panel { display: flex; flex-direction: column; height: 100%; }
+.chat-messages { flex: 1; overflow-y: auto; padding: 8px 12px; font-size: 13px; line-height: 1.6; }
+.chat-msg { margin-bottom: 3px; word-break: break-word; }
+.chat-msg .chat-from { font-weight: 600; }
+.chat-msg .chat-time { color: #4a5a6a; font-size: 11px; margin-right: 4px; }
+.chat-msg.system { color: #f0c040; font-style: italic; }
+.chat-msg.danger { color: #ff6b6b; }
+.chat-msg.success { color: #44ff88; }
+.chat-input-row { display: flex; gap: 6px; padding: 8px 12px; background: #161b22; border-top: 1px solid #30363d; flex-shrink: 0; }
+.chat-input-row input { flex: 1; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #e0e6ed; padding: 8px 12px; font-size: 13px; outline: none; }
+.chat-input-row input:focus { border-color: #f0c040; }
+.chat-input-row button { background: #f0c040; border: none; border-radius: 6px; color: #1a1a1a; padding: 0 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
+
+/* Players Tab */
+.players-panel { padding: 8px; }
+.section-title { padding: 6px 8px; font-size: 12px; font-weight: 700; color: #7a8a9a; text-transform: uppercase; letter-spacing: 0.05em; }
+.player-list-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; font-size: 13px; transition: background 0.15s; cursor: pointer; }
+.player-list-item:hover { background: #161b22; }
+.pl-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.pl-name { flex: 1; }
+.pl-lvl { font-size: 11px; color: #f0c040; }
+.pl-hp { font-size: 11px; color: #7a8a9a; }
+
+/* Inventory Tab */
+.inv-panel { padding: 8px; }
+.inv-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-bottom: 12px; }
+.inv-slot { aspect-ratio: 1; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; position: relative; transition: border-color 0.15s; font-size: 22px; }
+.inv-slot:hover { border-color: #f0c040; }
+.inv-slot.empty { opacity: 0.3; }
+.inv-slot .inv-count { position: absolute; bottom: 1px; right: 3px; font-size: 10px; color: #fff; font-weight: 700; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+.inv-slot .inv-tip { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: rgba(13,17,23,0.97); border: 1px solid #3a5068; border-radius: 4px; padding: 4px 8px; font-size: 11px; white-space: nowrap; display: none; z-index: 10; margin-bottom: 4px; }
+.inv-slot:hover .inv-tip { display: block; }
+
+/* Equipment */
+.equip-section { margin-bottom: 12px; }
+.equip-slots { display: flex; gap: 8px; justify-content: center; }
+.equip-slot { width: 50px; height: 50px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; position: relative; font-size: 22px; }
+.equip-slot:hover { border-color: #f0c040; }
+.equip-slot .eq-label { font-size: 9px; color: #4a5a6a; margin-top: 2px; }
+.equip-slot .eq-tip { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: rgba(13,17,23,0.97); border: 1px solid #3a5068; border-radius: 4px; padding: 4px 8px; font-size: 11px; white-space: nowrap; display: none; z-index: 10; margin-bottom: 4px; }
+.equip-slot:hover .eq-tip { display: block; }
+
+/* Quest Tab */
+.quest-panel { padding: 8px; }
+.quest-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+.quest-card .q-name { font-size: 14px; font-weight: 700; color: #f0c040; margin-bottom: 4px; }
+.quest-card .q-desc { font-size: 12px; color: #c0d0e0; margin-bottom: 6px; }
+.quest-card .q-progress { font-size: 12px; color: #7a8a9a; }
+.quest-card .q-progress .q-done { color: #44ff88; }
+.quest-card.completed { border-color: #44ff88; }
+.quest-empty { text-align: center; color: #4a5a6a; padding: 30px; font-size: 13px; }
+
+/* Skills Tab */
+.skills-panel { padding: 8px; }
+.skill-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; display: flex; align-items: center; gap: 10px; }
+.skill-card .sc-icon { font-size: 24px; }
+.skill-card .sc-info { flex: 1; }
+.skill-card .sc-name { font-size: 13px; font-weight: 700; color: #e0e6ed; }
+.skill-card .sc-detail { font-size: 11px; color: #7a8a9a; }
+.skill-card .sc-key { background: #30363d; border-radius: 4px; padding: 2px 8px; font-size: 11px; color: #c0d0e0; font-weight: 700; }
+
+/* Stats display */
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; padding: 8px; font-size: 12px; }
+.stats-grid .stat-row { display: flex; justify-content: space-between; }
+.stats-grid .stat-label { color: #7a8a9a; }
+.stats-grid .stat-val { color: #f0c040; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<!-- Login Screen -->
+<div id="loginScreen">
+  <div class="login-box">
+    <h1>⚔ MMO 游戏世界</h1>
+    <p class="subtitle">输入 UID 进入冒险世界</p>
+    <input type="number" id="loginUid" placeholder="UID (如: 10001)" value="10001" min="1">
+    <input type="text" id="loginHost" placeholder="网关地址" value="127.0.0.1">
+    <div style="display:flex;gap:8px;">
+      <input type="number" id="loginPort" placeholder="网关端口" value="7888" style="flex:1;">
+      <select id="gateSelect" onchange="document.getElementById('loginPort').value=this.value" style="background:#0d1420;border:1px solid #3a5068;border-radius:8px;color:#e0e6ed;padding:0 12px;font-size:13px;">
+        <option value="7888">Gate1 (7888)</option>
+        <option value="7889">Gate2 (7889)</option>
+      </select>
+    </div>
+    <button id="loginBtn" onclick="doLogin()">进入游戏</button>
+    <div class="login-error" id="loginError"></div>
+    <div class="login-tips">
+      <strong>操作说明:</strong><br>
+      WASD / 方向键 - 移动<br>
+      1-5 - 使用技能 (1=普攻 2=重击 3=火球 4=冰冻 5=治疗)<br>
+      点击怪物/玩家 - 选中目标并攻击<br>
+      点击NPC - 交互对话<br>
+      Tab - 切换右侧面板<br>
+      Enter - 聊天<br>
+      I - 背包, Q - 任务, K - 技能<br>
+      <strong>双网关测试:</strong> 开两个标签页, 一个选Gate1一个选Gate2, 用不同UID登录
+    </div>
+  </div>
+</div>
+
+<!-- Game Screen -->
+<div id="gameScreen">
+  <div class="game-layout">
+    <!-- Left: Canvas -->
+    <div class="game-left">
+      <div class="top-bar">
+        <div class="player-info">
+          <div class="player-avatar" id="avatar">P</div>
+          <div>
+            <div class="player-name" id="myName">--</div>
+            <div class="player-level" id="myLevel">Lv.1</div>
+          </div>
+        </div>
+        <div class="bars-container">
+          <div class="bar-bg">
+            <div class="bar-fill hp-fill" id="hpBar" style="width:100%"></div>
+            <div class="bar-text" id="hpText">100/100</div>
+          </div>
+          <div class="bar-bg" style="height:12px">
+            <div class="bar-fill mp-fill" id="mpBar" style="width:100%"></div>
+            <div class="bar-text" id="mpText">50/50</div>
+          </div>
+          <div class="bar-bg exp-bar">
+            <div class="bar-fill exp-fill" id="expBar" style="width:0%"></div>
+          </div>
+        </div>
+        <div class="conn-status">
+          <span class="status-dot" id="connDot">offline</span>
+          <span id="connText">未连接</span>
+        </div>
+      </div>
+
+      <div class="canvas-wrapper" id="canvasWrapper">
+        <canvas id="gameCanvas" width="900" height="600"></canvas>
+        <div class="minimap"><canvas id="minimapCanvas" width="180" height="140"></canvas></div>
+        <div class="tooltip" id="tooltip"></div>
+        <div class="toast-container" id="toastContainer"></div>
+        <div class="npc-dialog" id="npcDialog"></div>
+      </div>
+
+      <div class="skill-bar" id="skillBar"></div>
+    </div>
+
+    <!-- Right: Tabbed Sidebar -->
+    <div class="game-right">
+      <div class="tab-bar">
+        <div class="tab-btn active" data-tab="chat" onclick="switchTab('chat')">聊天</div>
+        <div class="tab-btn" data-tab="players" onclick="switchTab('players')">玩家</div>
+        <div class="tab-btn" data-tab="inventory" onclick="switchTab('inventory')">背包</div>
+        <div class="tab-btn" data-tab="quests" onclick="switchTab('quests')">任务</div>
+        <div class="tab-btn" data-tab="skills" onclick="switchTab('skills')">技能</div>
+        <div class="tab-btn" data-tab="stats" onclick="switchTab('stats')">属性</div>
+      </div>
+
+      <div class="tab-content active" id="tab-chat">
+        <div class="chat-panel">
+          <div class="chat-messages" id="chatMessages"></div>
+          <div class="chat-input-row">
+            <input type="text" id="chatInput" placeholder="输入消息..." maxlength="200" onkeydown="if(event.key==='Enter')sendChat()">
+            <button onclick="sendChat()">发送</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-players">
+        <div class="players-panel">
+          <div class="section-title">附近玩家 <span id="playerCount" style="color:#f0c040">(0)</span></div>
+          <div id="playerList"><div style="text-align:center;color:#4a5a6a;padding:20px;font-size:13px">暂无其他玩家</div></div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-inventory">
+        <div class="inv-panel">
+          <div class="equip-section">
+            <div class="section-title">装备</div>
+            <div class="equip-slots">
+              <div class="equip-slot" id="eqWeapon" onclick="unequip('weapon')"><span>🗡</span><span class="eq-label">武器</span><div class="eq-tip">空</div></div>
+              <div class="equip-slot" id="eqArmor" onclick="unequip('armor')"><span>🛡</span><span class="eq-label">护甲</span><div class="eq-tip">空</div></div>
+              <div class="equip-slot" id="eqAccessory" onclick="unequip('accessory')"><span>💍</span><span class="eq-label">饰品</span><div class="eq-tip">空</div></div>
+            </div>
+          </div>
+          <div class="section-title">背包 <span id="invCount" style="color:#f0c040">(0)</span></div>
+          <div class="inv-grid" id="invGrid"></div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-quests">
+        <div class="quest-panel">
+          <div class="section-title">进行中的任务</div>
+          <div id="questList"><div class="quest-empty">暂无任务，找村长接任务吧！</div></div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-skills">
+        <div class="skills-panel">
+          <div class="section-title">技能列表</div>
+          <div id="skillList"></div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-stats">
+        <div class="stats-panel">
+          <div class="section-title">角色属性</div>
+          <div class="stats-grid" id="statsGrid">
+            <div class="stat-row"><span class="stat-label">等级</span><span class="stat-val" id="sLevel">1</span></div>
+            <div class="stat-row"><span class="stat-label">经验</span><span class="stat-val" id="sExp">0/100</span></div>
+            <div class="stat-row"><span class="stat-label">生命</span><span class="stat-val" id="sHp">100/100</span></div>
+            <div class="stat-row"><span class="stat-label">法力</span><span class="stat-val" id="sMp">50/50</span></div>
+            <div class="stat-row"><span class="stat-label">攻击</span><span class="stat-val" id="sAtk">20</span></div>
+            <div class="stat-row"><span class="stat-label">防御</span><span class="stat-val" id="sDef">5</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// 常量
+// ════════════════════════════════════════════════════════════════
+const CANVAS_W = 900, CANVAS_H = 600;
+const WORLD_W = 1600, WORLD_H = 1200;
+const MOVE_SPEED = 3.5;
+const SEND_RATE = 100;
+const ENTITY_POLL_RATE = 2000;
+
+// ════════════════════════════════════════════════════════════════
+// 游戏状态
+// ════════════════════════════════════════════════════════════════
+let ws = null, myConnId = null, myUid = 0, connected = false;
+let myPlayer = { uid:0, name:"", x:200, y:200, dir:2, hp:100, maxHp:100, mp:50, maxMp:50, level:1, exp:0, maxExp:100, atk:20, def:5, targetX:200, targetY:200 };
+let otherPlayers = new Map();   // uid -> player
+let mobs = new Map();            // entityId -> mob
+let npcs = new Map();            // id -> npc
+let drops = new Map();           // dropId -> drop
+let skills = [];                 // 技能列表
+let inventory = [];              // 背包
+let equipment = { weapon:null, armor:null, accessory:null };
+let quests = [];                 // 任务列表
+
+let keys = {}, lastMoveSent = 0, selectedTarget = 0, selectedTargetType = '';
+let lastEntityPoll = 0;
+let camera = { x: 0, y: 0 };
+let damageNumbers = [];
+let spellEffects = [];
+
+// Canvas
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const miniCanvas = document.getElementById('minimapCanvas');
+const miniCtx = miniCanvas.getContext('2d');
+
+// ════════════════════════════════════════════════════════════════
+// 网络通信
+// ════════════════════════════════════════════════════════════════
+function doLogin() {
+  const uid = parseInt(document.getElementById('loginUid').value);
+  const host = document.getElementById('loginHost').value || '127.0.0.1';
+  const port = parseInt(document.getElementById('loginPort').value) || 7888;
+  if (!uid || uid < 1) { document.getElementById('loginError').textContent = '请输入有效的 UID'; return; }
+  document.getElementById('loginBtn').disabled = true;
+  document.getElementById('loginError').textContent = '连接中...';
+  myUid = uid; myPlayer.uid = uid;
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws`);
+  ws.onopen = () => { sendAction({ action:'connect', uid, token:'test_token_123', host, port }); };
+  ws.onmessage = (e) => { handleProxyMessage(JSON.parse(e.data)); };
+  ws.onclose = () => {
+    if (connected) { addChat('system', '与世界断开连接，尝试重连...'); setTimeout(() => location.reload(), 2000); }
+    else { document.getElementById('loginError').textContent = '连接失败，请检查网关是否运行'; document.getElementById('loginBtn').disabled = false; }
+  };
+  ws.onerror = () => { document.getElementById('loginError').textContent = 'WebSocket 连接错误'; document.getElementById('loginBtn').disabled = false; };
+}
+
+function sendAction(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+function sendGameMessage(msgId, data) { if (!myConnId) return; sendAction({ action:'send', id:myConnId, msgId, data }); }
+
+function handleProxyMessage(msg) {
+  switch (msg.event) {
+    case 'connected':
+      myConnId = msg.id; myUid = msg.uid; connected = true;
+      document.getElementById('connDot').className = 'status-dot online';
+      document.getElementById('connText').textContent = '已连接';
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('gameScreen').style.display = 'block';
+      addChat('system', '已连接到游戏世界');
+      break;
+    case 'connectFailed':
+      document.getElementById('loginError').textContent = '连接网关失败: ' + msg.reason;
+      document.getElementById('loginBtn').disabled = false;
+      break;
+    case 'message': handleGameMessage(msg.msgId, msg.data); break;
+    case 'disconnected':
+      connected = false;
+      document.getElementById('connDot').className = 'status-dot offline';
+      document.getElementById('connText').textContent = '已断开';
+      addChat('system', '连接已断开');
+      break;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// 游戏消息处理
+// ════════════════════════════════════════════════════════════════
+function handleGameMessage(msgId, data) {
+  let json; try { json = JSON.parse(data); } catch { json = {}; }
+
+  switch (msgId) {
+    // 玩家属性
+    case 5001:
+      myPlayer.hp = json.hp ?? myPlayer.hp;
+      myPlayer.maxHp = json.maxHp ?? myPlayer.maxHp;
+      myPlayer.mp = json.mp ?? myPlayer.mp;
+      myPlayer.maxMp = json.maxMp ?? myPlayer.maxMp;
+      myPlayer.level = json.level ?? myPlayer.level;
+      myPlayer.exp = json.exp ?? myPlayer.exp;
+      myPlayer.maxExp = json.maxExp ?? myPlayer.maxExp;
+      myPlayer.atk = json.atk ?? myPlayer.atk;
+      myPlayer.def = json.def ?? myPlayer.def;
+      myPlayer.name = json.name || myPlayer.name || `Player${myUid}`;
+      myPlayer.x = json.x ?? myPlayer.x;
+      myPlayer.y = json.y ?? myPlayer.y;
+      myPlayer.targetX = myPlayer.x; myPlayer.targetY = myPlayer.y;
+      if (json.revived) showToast('已被击败，自动复活', 'danger');
+      updateStatsUI();
+      break;
+
+    // 经验更新
+    case 5002:
+      if (json.exp !== undefined) { myPlayer.exp = json.exp; myPlayer.maxExp = json.maxExp; }
+      if (json.level !== undefined && json.level > myPlayer.level) {
+        myPlayer.level = json.level;
+        showToast(`升级! Lv.${json.level}`, 'success');
+      }
+      if (json.mp !== undefined) myPlayer.mp = json.mp;
+      if (json.gained) showToast(`获得 ${json.gained} 经验`, 'success');
+      updateStatsUI();
+      break;
+
+    // 背包更新
+    case 5003:
+      if (json.items) { inventory = json.items; updateInventoryUI(); }
+      if (json.error) showToast(json.error, 'danger');
+      break;
+
+    // 装备更新
+    case 5004:
+      if (json.weapon !== undefined) equipment.weapon = json.weapon;
+      if (json.armor !== undefined) equipment.armor = json.armor;
+      if (json.accessory !== undefined) equipment.accessory = json.accessory;
+      updateEquipmentUI();
+      if (json.error) showToast(json.error, 'danger');
+      break;
+
+    // 任务更新
+    case 5005:
+      if (json.quests) { quests = json.quests; updateQuestUI(); }
+      if (json.error) showToast(json.error, 'danger');
+      break;
+
+    // NPC对话
+    case 5006:
+      showNpcDialog(json);
+      break;
+
+    // 技能列表
+    case 5500:
+      if (json.skills) { skills = json.skills; updateSkillBar(); updateSkillListUI(); }
+      break;
+
+    // 战斗结果
+    case 6001:
+      if (json.error) { showToast(json.error === 'cooldown' ? '技能冷却中' : json.error, 'danger'); break; }
+      if (json.targetUid !== undefined && !json.attackerUid) {
+        // 我攻击了目标
+        const target = mobs.get(json.targetUid) || otherPlayers.get(json.targetUid);
+        if (target) {
+          target.hp = json.targetHp;
+          const tx = target.x, ty = target.y;
+          showDamageNumber(tx, ty - 20, `-${json.dmg}`, json.crit ? '#ff4444' : '#ffaa44', json.crit);
+          if (json.skillId && json.skillId >= 3) showSpellEffect(tx, ty, json.skillId);
+          if (json.targetHp <= 0) {
+            if (mobs.has(json.targetUid)) showToast(`击败了 ${json.targetName || '怪物'}!`, 'success');
+            else addChat('system', `击败了 ${json.targetName || '玩家'}!`);
+          }
+        }
+      } else if (json.attackerUid !== undefined) {
+        // 被攻击
+        myPlayer.hp = json.hp;
+        showDamageNumber(myPlayer.x, myPlayer.y - 20, `-${json.dmg}`, '#ff6666', json.crit);
+        updateStatsUI();
+        if (json.mobAttack) addChat('system', `${json.attackerName} 攻击了你造成 ${json.dmg} 伤害`);
+        if (myPlayer.hp <= 0) showToast('你被击败了!', 'danger');
+      } else if (json.swing) {
+        showDamageNumber(myPlayer.x + 30, myPlayer.y - 20, '⚔', '#7a8a9a', false);
+      }
+      break;
+
+    // 实体状态更新
+    case 6002:
+      if (json.entityId) {
+        const mob = mobs.get(json.entityId);
+        if (mob) { mob.hp = json.hp; mob.maxHp = json.maxHp; mob.state = json.state; mob.x = json.x; mob.y = json.y; }
+      }
+      break;
+
+    // 实体死亡/掉落
+    case 6003:
+      if (json.entityId && json.drops) {
+        const mob = mobs.get(json.entityId);
+        if (mob) { mob.hp = 0; mob.state = 'Dead'; }
+        for (const drop of json.drops) {
+          drops.set(drop.dropId, drop);
+        }
+        if (json.killer === myUid) {
+          // 击杀者已经收到经验消息
+        }
+        // 如果是拾取消息
+      }
+      if (json.dropId && json.pickedBy) {
+        drops.delete(json.dropId);
+        if (json.pickedBy === myUid) showToast('拾取了物品', 'success');
+      }
+      break;
+
+    // 聊天ACK
+    case 7001: break;
+
+    // 聊天广播
+    case 7002:
+      const fromName = json.fromName || `Player${json.from}`;
+      if (json.from === 0) addChat('system', json.text);
+      else addChat(fromName, json.text, json.from);
+      break;
+
+    // 玩家位置更新
+    case 8001:
+      const p = otherPlayers.get(json.uid);
+      if (p) { p.targetX = json.x; p.targetY = json.y; p.dir = json.dir; p.lastUpdate = Date.now(); }
+      break;
+
+    // 玩家进入
+    case 8002:
+      if (json.uid !== myUid) {
+        otherPlayers.set(json.uid, { uid:json.uid, name:json.name||`Player${json.uid}`, x:json.x, y:json.y, targetX:json.x, targetY:json.y, dir:2, hp:json.hp??100, maxHp:json.maxHp??100, level:json.level??1, lastUpdate:Date.now() });
+        addChat('system', `${json.name} 进入了游戏`);
+        updatePlayerList();
+      }
+      break;
+
+    // 玩家离开
+    case 8003:
+      const p2 = otherPlayers.get(json.uid);
+      if (p2) { addChat('system', `${p2.name} 离开了游戏`); otherPlayers.delete(json.uid); updatePlayerList(); }
+      break;
+
+    // 实体位置更新
+    case 8004:
+      if (json.entityId) {
+        const mob = mobs.get(json.entityId);
+        if (mob) { mob.targetX = json.x; mob.targetY = json.y; mob.dir = json.dir; }
+      }
+      break;
+
+    // 玩家列表
+    case 9001:
+      if (json.players) {
+        for (const pl of json.players) {
+          if (pl.uid !== myUid && !otherPlayers.has(pl.uid)) {
+            otherPlayers.set(pl.uid, { uid:pl.uid, name:pl.name||`Player${pl.uid}`, x:pl.x, y:pl.y, targetX:pl.x, targetY:pl.y, dir:2, hp:pl.hp??100, maxHp:pl.maxHp??100, level:pl.level??1, lastUpdate:Date.now() });
+          }
+        }
+        updatePlayerList();
+      }
+      break;
+
+    // 实体列表 (NPC + 怪物)
+    case 9002:
+      if (json.npcs) {
+        npcs.clear();
+        for (const n of json.npcs) npcs.set(n.id, n);
+      }
+      if (json.mobs) {
+        for (const m of json.mobs) {
+          const existing = mobs.get(m.entityId);
+          if (existing) {
+            existing.hp = m.hp; existing.maxHp = m.maxHp; existing.state = m.state;
+            // 平滑更新位置
+            existing.targetX = m.x; existing.targetY = m.y;
+          } else {
+            mobs.set(m.entityId, { entityId:m.entityId, defId:m.defId, name:m.name, x:m.x, y:m.y, targetX:m.x, targetY:m.y, dir:2, hp:m.hp, maxHp:m.maxHp, level:m.level, state:m.state });
+          }
+        }
+        // 清除不在列表中的怪物
+        const validIds = new Set(json.mobs.map(m => m.entityId));
+        for (const id of mobs.keys()) { if (!validIds.has(id)) mobs.delete(id); }
+      }
+      break;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// 游戏动作
+// ════════════════════════════════════════════════════════════════
+function sendChat() {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text || !connected) return;
+  sendGameMessage(2001, JSON.stringify({ text, channel:'world' }));
+  input.value = '';
+}
+
+function useSkill(skillId) {
+  if (!connected) return;
+  let targetUid = 0;
+  if (selectedTarget && selectedTargetType === 'mob') targetUid = selectedTarget;
+  else if (selectedTarget && selectedTargetType === 'player') targetUid = selectedTarget;
+  else {
+    // 自动选择最近的怪物
+    let minDist = 250;
+    for (const [eid, m] of mobs) {
+      if (m.hp <= 0) continue;
+      const dx = m.x - myPlayer.x, dy = m.y - myPlayer.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < minDist) { minDist = dist; targetUid = eid; }
+    }
+    if (!targetUid) {
+      for (const [uid, p] of otherPlayers) {
+        const dx = p.x - myPlayer.x, dy = p.y - myPlayer.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < minDist) { minDist = dist; targetUid = uid; }
+      }
+    }
+  }
+  if (skillId === 1) sendGameMessage(1001, JSON.stringify({ targetUid }));
+  else sendGameMessage(1002, JSON.stringify({ skillId, targetUid }));
+}
+
+function pickupItem(dropId) {
+  sendGameMessage(1003, JSON.stringify({ dropId }));
+}
+
+function equipItem(itemId) {
+  sendGameMessage(1004, JSON.stringify({ itemId }));
+}
+
+function unequip(slot) {
+  // 重新装备空位 = 卸下当前装备（通过装备一个不存在的物品？）
+  // 实际上协议不支持直接卸下，只能通过装备另一个物品来替换
+  // 这里简单提示
+  showToast('装备替换：请在背包中选择新装备', 'info');
+}
+
+function acceptQuest(questId) {
+  sendGameMessage(1005, JSON.stringify({ questId }));
+  closeNpcDialog();
+}
+
+function completeQuest(questId) {
+  sendGameMessage(1006, JSON.stringify({ questId }));
+  closeNpcDialog();
+}
+
+function interactNpc(npcId) {
+  sendGameMessage(1007, JSON.stringify({ npcId }));
+}
+
+function useItem(itemId) {
+  sendGameMessage(1008, JSON.stringify({ itemId }));
+}
+
+function queryEntities() {
+  sendGameMessage(4002, JSON.stringify({}));
+}
+
+// ════════════════════════════════════════════════════════════════
+// 输入处理
+// ════════════════════════════════════════════════════════════════
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  keys[e.key.toLowerCase()] = true;
+
+  if (e.key >= '1' && e.key <= '5') useSkill(parseInt(e.key));
+  if (e.key === 'Tab') { e.preventDefault(); cycleTab(); }
+  if (e.key.toLowerCase() === 'i') switchTab('inventory');
+  if (e.key.toLowerCase() === 'q') switchTab('quests');
+  if (e.key.toLowerCase() === 'k') switchTab('skills');
+  if (e.key.toLowerCase() === 'p') switchTab('players');
+  if (e.key === 'Escape') closeNpcDialog();
+});
+document.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+
+// Canvas 点击
+canvas.addEventListener('click', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const cx = (e.clientX - rect.left) * (canvas.width / rect.width) + camera.x;
+  const cy = (e.clientY - rect.top) * (canvas.height / rect.height) + camera.y;
+
+  // 检查NPC
+  for (const npc of npcs.values()) {
+    if (Math.sqrt((npc.x-cx)**2 + (npc.y-cy)**2) < 20) {
+      interactNpc(npc.id);
+      return;
+    }
+  }
+  // 检查怪物
+  for (const [eid, m] of mobs) {
+    if (m.hp <= 0) continue;
+    if (Math.sqrt((m.x-cx)**2 + (m.y-cy)**2) < 20) {
+      selectedTarget = eid; selectedTargetType = 'mob';
+      useSkill(1);
+      return;
+    }
+  }
+  // 检查掉落物
+  for (const [dropId, d] of drops) {
+    if (Math.sqrt((d.x-cx)**2 + (d.y-cy)**2) < 18) {
+      pickupItem(dropId);
+      return;
+    }
+  }
+  // 检查玩家
+  for (const [uid, p] of otherPlayers) {
+    if (Math.sqrt((p.x-cx)**2 + (p.y-cy)**2) < 20) {
+      selectedTarget = uid; selectedTargetType = 'player';
+      return;
+    }
+  }
+  selectedTarget = 0; selectedTargetType = '';
+});
+
+// Canvas 鼠标移动 - tooltip
+canvas.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const cx = (e.clientX - rect.left) * (canvas.width / rect.width) + camera.x;
+  const cy = (e.clientY - rect.top) * (canvas.height / rect.height) + camera.y;
+  const tooltip = document.getElementById('tooltip');
+
+  let found = null;
+  for (const npc of npcs.values()) {
+    if (Math.sqrt((npc.x-cx)**2 + (npc.y-cy)**2) < 20) { found = { name:npc.name, level:'', hp:'' }; break; }
+  }
+  if (!found) for (const [eid, m] of mobs) {
+    if (Math.sqrt((m.x-cx)**2 + (m.y-cy)**2) < 20) { found = { name:m.name, level:`Lv.${m.level}`, hp:`HP: ${m.hp}/${m.maxHp}` }; break; }
+  }
+  if (!found) for (const [uid, p] of otherPlayers) {
+    if (Math.sqrt((p.x-cx)**2 + (p.y-cy)**2) < 20) { found = { name:p.name, level:`Lv.${p.level}`, hp:`HP: ${p.hp}/${p.maxHp}` }; break; }
+  }
+  if (!found) for (const [dropId, d] of drops) {
+    if (Math.sqrt((d.x-cx)**2 + (d.y-cy)**2) < 18) { found = { name:d.name, level:`x${d.count}`, hp:'' }; break; }
+  }
+
+  if (found) {
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.clientX - rect.left + 12) + 'px';
+    tooltip.style.top = (e.clientY - rect.top + 12) + 'px';
+    tooltip.innerHTML = `<div class="tt-name">${found.name}</div>${found.level?`<div class="tt-level">${found.level}</div>`:''}${found.hp?`<div class="tt-hp">${found.hp}</div>`:''}`;
+  } else {
+    tooltip.style.display = 'none';
+  }
+});
+
+// ════════════════════════════════════════════════════════════════
+// 游戏循环
+// ════════════════════════════════════════════════════════════════
+function update(dt) {
+  // 移动
+  let dx = 0, dy = 0;
+  if (keys['w'] || keys['arrowup']) dy -= 1;
+  if (keys['s'] || keys['arrowdown']) dy += 1;
+  if (keys['a'] || keys['arrowleft']) dx -= 1;
+  if (keys['d'] || keys['arrowright']) dx += 1;
+
+  if (dx !== 0 || dy !== 0) {
+    const len = Math.sqrt(dx*dx + dy*dy);
+    dx = dx/len * MOVE_SPEED; dy = dy/len * MOVE_SPEED;
+    myPlayer.x = Math.max(15, Math.min(WORLD_W-15, myPlayer.x+dx));
+    myPlayer.y = Math.max(15, Math.min(WORLD_H-15, myPlayer.y+dy));
+    if (Math.abs(dy) > Math.abs(dx)) myPlayer.dir = dy > 0 ? 2 : 0;
+    else myPlayer.dir = dx > 0 ? 1 : 3;
+    const now = Date.now();
+    if (now - lastMoveSent > SEND_RATE) {
+      lastMoveSent = now;
+      sendGameMessage(3001, JSON.stringify({ x:myPlayer.x, y:myPlayer.y, dir:myPlayer.dir }));
+    }
+  }
+
+  // 摄像机跟随
+  camera.x = myPlayer.x - CANVAS_W/2;
+  camera.y = myPlayer.y - CANVAS_H/2;
+  camera.x = Math.max(0, Math.min(WORLD_W - CANVAS_W, camera.x));
+  camera.y = Math.max(0, Math.min(WORLD_H - CANVAS_H, camera.y));
+
+  // 插值其他玩家
+  for (const p of otherPlayers.values()) {
+    p.x += (p.targetX - p.x) * 0.2;
+    p.y += (p.targetY - p.y) * 0.2;
+  }
+  // 插值怪物
+  for (const m of mobs.values()) {
+    m.x += (m.targetX - m.x) * 0.15;
+    m.y += (m.targetY - m.y) * 0.15;
+  }
+
+  // 伤害数字
+  for (let i = damageNumbers.length-1; i >= 0; i--) {
+    const d = damageNumbers[i];
+    d.y += d.vy; d.vy *= 0.95; d.life -= dt;
+    if (d.life <= 0) damageNumbers.splice(i, 1);
+  }
+  // 技能特效
+  for (let i = spellEffects.length-1; i >= 0; i--) {
+    const s = spellEffects[i];
+    s.life -= dt;
+    s.radius += s.expand;
+    if (s.life <= 0) spellEffects.splice(i, 1);
+  }
+
+  // 定时查询实体
+  const now = Date.now();
+  if (now - lastEntityPoll > ENTITY_POLL_RATE) {
+    lastEntityPoll = now;
+    queryEntities();
+  }
+
+  // 技能冷却更新
+  updateSkillCooldowns(dt);
+}
+
+function render() {
+  ctx.fillStyle = '#1a2332';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // 地形
+  ctx.save();
+  ctx.translate(-camera.x, -camera.y);
+
+  // 网格
+  ctx.strokeStyle = 'rgba(50,70,90,0.2)';
+  ctx.lineWidth = 1;
+  const gridSize = 50;
+  const startX = Math.floor(camera.x/gridSize)*gridSize;
+  const startY = Math.floor(camera.y/gridSize)*gridSize;
+  for (let x = startX; x <= camera.x + CANVAS_W; x += gridSize) {
+    ctx.beginPath(); ctx.moveTo(x, camera.y); ctx.lineTo(x, camera.y + CANVAS_H); ctx.stroke();
+  }
+  for (let y = startY; y <= camera.y + CANVAS_H; y += gridSize) {
+    ctx.beginPath(); ctx.moveTo(camera.x, y); ctx.lineTo(camera.x + CANVAS_W, y); ctx.stroke();
+  }
+
+  // 区域标记 (不同区域用不同底色)
+  // 新手村区域
+  ctx.fillStyle = 'rgba(60,120,60,0.08)';
+  ctx.fillRect(100, 100, 400, 300);
+  // 怪物区域
+  ctx.fillStyle = 'rgba(120,60,60,0.06)';
+  ctx.fillRect(400, 300, 400, 300);
+  ctx.fillStyle = 'rgba(120,60,60,0.06)';
+  ctx.fillRect(850, 350, 500, 500);
+  ctx.fillStyle = 'rgba(80,40,120,0.06)';
+  ctx.fillRect(500, 750, 700, 400);
+
+  // 世界边界
+  ctx.strokeStyle = '#3a5068';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(0, 0, WORLD_W, WORLD_H);
+
+  // 掉落物
+  for (const d of drops.values()) {
+    ctx.save();
+    ctx.translate(d.x, d.y);
+    // 光圈
+    ctx.fillStyle = 'rgba(240,192,64,0.15)';
+    ctx.beginPath(); ctx.arc(0, 0, 14, 0, Math.PI*2); ctx.fill();
+    // 物品图标
+    ctx.font = '16px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(d.icon || '?', 0, 0);
+    ctx.restore();
+  }
+
+  // NPC
+  for (const npc of npcs.values()) {
+    drawNpc(npc);
+  }
+
+  // 怪物
+  for (const m of mobs.values()) {
+    drawMob(m);
+  }
+
+  // 其他玩家
+  for (const p of otherPlayers.values()) {
+    drawPlayer(p, false);
+  }
+
+  // 自己
+  drawPlayer(myPlayer, true);
+
+  // 目标选中圈
+  if (selectedTarget) {
+    const t = mobs.get(selectedTarget) || otherPlayers.get(selectedTarget);
+    if (t) {
+      ctx.strokeStyle = '#ff4444';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.arc(t.x, t.y, 24, 0, Math.PI*2); ctx.stroke();
+      ctx.setLineDash([]);
+    } else { selectedTarget = 0; selectedTargetType = ''; }
+  }
+
+  // 技能特效
+  for (const s of spellEffects) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, s.life / 30);
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(s.x, s.y, s.radius, 0, Math.PI*2); ctx.stroke();
+    if (s.fillColor) {
+      ctx.fillStyle = s.fillColor;
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.radius * 0.7, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // 伤害数字
+  for (const d of damageNumbers) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, d.life / 60);
+    ctx.fillStyle = d.color;
+    ctx.font = `bold ${d.crit ? 22 : 16}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText(d.text, d.x, d.y);
+    if (d.crit) { ctx.font = '10px sans-serif'; ctx.fillStyle = '#ff4444'; ctx.fillText('暴击!', d.x, d.y + 14); }
+    ctx.restore();
+  }
+
+  ctx.restore();
+
+  // 小地图
+  renderMinimap();
+}
+
+function drawPlayer(p, isMe) {
+  const x = p.x, y = p.y;
+  // 阴影
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath(); ctx.ellipse(x, y+14, 12, 4, 0, 0, Math.PI*2); ctx.fill();
+  // 身体
+  if (isMe) ctx.fillStyle = '#f0c040';
+  else { const hue = (p.uid*47)%360; ctx.fillStyle = `hsl(${hue},60%,50%)`; }
+  ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = isMe ? '#fff' : 'rgba(0,0,0,0.4)';
+  ctx.lineWidth = isMe ? 2 : 1; ctx.stroke();
+  // 方向
+  const dirs = [[0,-1],[1,0],[0,1],[-1,0]];
+  const d = dirs[p.dir] || [0,1];
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(x+d[0]*10, y+d[1]*10, 3, 0, Math.PI*2); ctx.fill();
+  // 名字
+  ctx.fillStyle = isMe ? '#f0c040' : '#c0d0e0';
+  ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(p.name + (p.level ? ` Lv.${p.level}` : ''), x, y-20);
+  // HP条
+  drawHpBar(x, y-16, 28, p.hp, p.maxHp);
+}
+
+function drawMob(m) {
+  const x = m.x, y = m.y;
+  if (m.state === 'Dead') {
+    // 墓碑
+    ctx.fillStyle = 'rgba(80,80,80,0.5)';
+    ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#4a5a6a'; ctx.font = '14px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('💀', x, y+5);
+    return;
+  }
+  // 阴影
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath(); ctx.ellipse(x, y+14, 12, 4, 0, 0, Math.PI*2); ctx.fill();
+  // 身体 - 按类型不同颜色
+  const mobColors = { 1:'#4caf50', 2:'#8bc34a', 3:'#9e9e9e', 4:'#9c27b0', 5:'#795548' };
+  ctx.fillStyle = mobColors[m.defId] || '#666';
+  ctx.beginPath(); ctx.arc(x, y, 13, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1; ctx.stroke();
+  // 眼睛
+  ctx.fillStyle = '#ff4444';
+  ctx.beginPath(); ctx.arc(x-4, y-3, 2, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x+4, y-3, 2, 0, Math.PI*2); ctx.fill();
+  // 名字
+  ctx.fillStyle = '#ff8888'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(`${m.name} Lv.${m.level}`, x, y-20);
+  // HP条
+  drawHpBar(x, y-16, 26, m.hp, m.maxHp);
+  // 状态指示
+  if (m.state === 'Chasing' || m.state === 'Attacking') {
+    ctx.fillStyle = '#ff4444'; ctx.font = '10px sans-serif';
+    ctx.fillText('!', x+16, y-8);
+  }
+}
+
+function drawNpc(npc) {
+  const x = npc.x, y = npc.y;
+  // 阴影
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath(); ctx.ellipse(x, y+14, 12, 4, 0, 0, Math.PI*2); ctx.fill();
+  // 身体
+  ctx.fillStyle = '#4488ff';
+  ctx.beginPath(); ctx.arc(x, y, 14, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+  // 名字
+  ctx.fillStyle = '#88ccff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(npc.name, x, y-20);
+  // 类型标记
+  const typeIcons = { quest_giver:'!', merchant:'$', healer:'+' };
+  ctx.fillStyle = '#f0c040'; ctx.font = 'bold 14px sans-serif';
+  ctx.fillText(typeIcons[npc.type] || '?', x+16, y-10);
+}
+
+function drawHpBar(x, y, w, hp, maxHp) {
+  const h = 4;
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(x-w/2-1, y-1, w+2, h+2);
+  const ratio = Math.max(0, hp / maxHp);
+  ctx.fillStyle = ratio > 0.5 ? '#44ff44' : ratio > 0.25 ? '#ffaa00' : '#ff4444';
+  ctx.fillRect(x-w/2, y, w*ratio, h);
+}
+
+function renderMinimap() {
+  miniCtx.fillStyle = '#0d1117';
+  miniCtx.fillRect(0, 0, 180, 140);
+  const sx = 180 / WORLD_W, sy = 140 / WORLD_H;
+
+  // 区域
+  miniCtx.fillStyle = 'rgba(60,120,60,0.15)';
+  miniCtx.fillRect(100*sx, 100*sy, 400*sx, 300*sy);
+  miniCtx.fillStyle = 'rgba(120,60,60,0.1)';
+  miniCtx.fillRect(400*sx, 300*sy, 400*sx, 300*sy);
+  miniCtx.fillRect(850*sx, 350*sy, 500*sx, 500*sy);
+  miniCtx.fillStyle = 'rgba(80,40,120,0.1)';
+  miniCtx.fillRect(500*sx, 750*sy, 700*sx, 400*sy);
+
+  // 边框
+  miniCtx.strokeStyle = '#30363d'; miniCtx.lineWidth = 1;
+  miniCtx.strokeRect(0, 0, 180, 140);
+
+  // NPC
+  for (const npc of npcs.values()) {
+    miniCtx.fillStyle = '#4488ff';
+    miniCtx.beginPath(); miniCtx.arc(npc.x*sx, npc.y*sy, 3, 0, Math.PI*2); miniCtx.fill();
+  }
+  // 怪物
+  for (const m of mobs.values()) {
+    if (m.hp <= 0) continue;
+    miniCtx.fillStyle = '#ff4444';
+    miniCtx.beginPath(); miniCtx.arc(m.x*sx, m.y*sy, 2, 0, Math.PI*2); miniCtx.fill();
+  }
+  // 其他玩家
+  for (const p of otherPlayers.values()) {
+    const hue = (p.uid*47)%360;
+    miniCtx.fillStyle = `hsl(${hue},60%,50%)`;
+    miniCtx.beginPath(); miniCtx.arc(p.x*sx, p.y*sy, 2, 0, Math.PI*2); miniCtx.fill();
+  }
+  // 掉落物
+  for (const d of drops.values()) {
+    miniCtx.fillStyle = '#f0c040';
+    miniCtx.fillRect(d.x*sx-1, d.y*sy-1, 2, 2);
+  }
+  // 自己
+  miniCtx.fillStyle = '#f0c040';
+  miniCtx.beginPath(); miniCtx.arc(myPlayer.x*sx, myPlayer.y*sy, 3, 0, Math.PI*2); miniCtx.fill();
+  // 视野框
+  miniCtx.strokeStyle = 'rgba(240,192,64,0.5)'; miniCtx.lineWidth = 1;
+  miniCtx.strokeRect(camera.x*sx, camera.y*sy, CANVAS_W*sx, CANVAS_H*sy);
+}
+
+function showDamageNumber(x, y, text, color, crit) {
+  damageNumbers.push({ x, y, text, color, crit:crit||false, life:60, vy:-1.5 });
+}
+
+function showSpellEffect(x, y, skillId) {
+  const effects = {
+    3: { color:'#ff6600', fillColor:'rgba(255,100,0,0.2)', radius:5, expand:3 },
+    4: { color:'#66ccff', fillColor:'rgba(100,200,255,0.2)', radius:5, expand:2.5 },
+  };
+  const e = effects[skillId];
+  if (e) spellEffects.push({ x, y, ...e, life:30 });
+}
+
+// ════════════════════════════════════════════════════════════════
+// UI 更新
+// ════════════════════════════════════════════════════════════════
+function updateStatsUI() {
+  document.getElementById('hpBar').style.width = (myPlayer.hp/myPlayer.maxHp*100)+'%';
+  document.getElementById('hpText').textContent = `${myPlayer.hp}/${myPlayer.maxHp}`;
+  document.getElementById('mpBar').style.width = (myPlayer.mp/myPlayer.maxMp*100)+'%';
+  document.getElementById('mpText').textContent = `${myPlayer.mp}/${myPlayer.maxMp}`;
+  document.getElementById('expBar').style.width = (myPlayer.exp/myPlayer.maxExp*100)+'%';
+  document.getElementById('myName').textContent = myPlayer.name;
+  document.getElementById('myLevel').textContent = `Lv.${myPlayer.level}`;
+  document.getElementById('avatar').textContent = (myPlayer.name.charAt(0)||'P').toUpperCase();
+  // 属性面板
+  document.getElementById('sLevel').textContent = myPlayer.level;
+  document.getElementById('sExp').textContent = `${myPlayer.exp}/${myPlayer.maxExp}`;
+  document.getElementById('sHp').textContent = `${myPlayer.hp}/${myPlayer.maxHp}`;
+  document.getElementById('sMp').textContent = `${myPlayer.mp}/${myPlayer.maxMp}`;
+  document.getElementById('sAtk').textContent = myPlayer.atk;
+  document.getElementById('sDef').textContent = myPlayer.def;
+}
+
+function updatePlayerList() {
+  const list = document.getElementById('playerList');
+  const players = Array.from(otherPlayers.values());
+  document.getElementById('playerCount').textContent = `(${players.length})`;
+  if (!players.length) { list.innerHTML = '<div style="text-align:center;color:#4a5a6a;padding:20px;font-size:13px">暂无其他玩家</div>'; return; }
+  list.innerHTML = players.map(p => {
+    const hue = (p.uid*47)%360;
+    return `<div class="player-list-item" onclick="selectTarget(${p.uid},'player')">
+      <span class="pl-dot" style="background:hsl(${hue},60%,50%)"></span>
+      <span class="pl-name">${p.name}</span>
+      <span class="pl-lvl">Lv.${p.level||1}</span>
+      <span class="pl-hp">${p.hp}/${p.maxHp}</span>
+    </div>`;
+  }).join('');
+}
+
+function selectTarget(uid, type) {
+  selectedTarget = uid;
+  selectedTargetType = type;
+}
+
+function updateInventoryUI() {
+  const grid = document.getElementById('invGrid');
+  document.getElementById('invCount').textContent = `(${inventory.length})`;
+  const maxSlots = 20;
+  let html = '';
+  for (let i = 0; i < maxSlots; i++) {
+    const item = inventory[i];
+    if (item) {
+      const canUse = item.type === 'potion';
+      const canEquip = item.type === 'weapon' || item.type === 'armor' || item.type === 'accessory';
+      const action = canUse ? `useItem(${item.itemId})` : canEquip ? `equipItem(${item.itemId})` : '';
+      html += `<div class="inv-slot" ${action?`onclick="${action}"`:''}>
+        <span>${item.icon}</span>
+        ${item.count > 1 ? `<span class="inv-count">${item.count}</span>` : ''}
+        <div class="inv-tip">${item.name} (${item.type})${canUse?' - 点击使用':''}${canEquip?' - 点击装备':''}</div>
+      </div>`;
+    } else {
+      html += '<div class="inv-slot empty"></div>';
+    }
+  }
+  grid.innerHTML = html;
+}
+
+function updateEquipmentUI() {
+  const updateSlot = (id, item) => {
+    const el = document.getElementById(id);
+    const tip = el.querySelector('.eq-tip');
+    if (item) {
+      el.querySelector('span:first-child').textContent = item.icon;
+      tip.textContent = `${item.name} (点击替换)`;
+    } else {
+      const defaultIcons = { eqWeapon:'🗡', eqArmor:'🛡', eqAccessory:'💍' };
+      el.querySelector('span:first-child').textContent = defaultIcons[id];
+      tip.textContent = '空';
+    }
+  };
+  updateSlot('eqWeapon', equipment.weapon);
+  updateSlot('eqArmor', equipment.armor);
+  updateSlot('eqAccessory', equipment.accessory);
+}
+
+function updateQuestUI() {
+  const list = document.getElementById('questList');
+  if (!quests.length) { list.innerHTML = '<div class="quest-empty">暂无任务，找村长接任务吧！</div>'; return; }
+  list.innerHTML = quests.map(q => {
+    const completed = q.progress >= q.target;
+    return `<div class="quest-card ${completed?'completed':''}">
+      <div class="q-name">${q.name}</div>
+      <div class="q-desc">${q.desc}</div>
+      <div class="q-progress">进度: <span class="${completed?'q-done':''}">${q.progress}/${q.target}</span>
+      ${completed ? '<span class="q-done" style="margin-left:8px">✓ 可完成</span>' : ''}</div>
+    </div>`;
+  }).join('');
+}
+
+function updateSkillBar() {
+  const bar = document.getElementById('skillBar');
+  bar.innerHTML = skills.map((s, i) => {
+    const cdLeft = s.cooldownLeft || 0;
+    const disabled = cdLeft > 0 || myPlayer.mp < s.mpCost;
+    return `<div class="skill-slot ${disabled?'disabled':''}" onclick="useSkill(${s.skillId})" data-skill-id="${s.skillId}">
+      <span class="sk-key">${i+1}</span>
+      <span class="sk-icon">${s.icon}</span>
+      ${s.mpCost > 0 ? `<span class="sk-cost">${s.mpCost}</span>` : ''}
+      <div class="skill-cooldown" id="cd-${s.skillId}" style="display:${cdLeft>0?'flex':'none'}">${(cdLeft/1000).toFixed(1)}</div>
+    </div>`;
+  }).join('');
+}
+
+function updateSkillListUI() {
+  const list = document.getElementById('skillList');
+  list.innerHTML = skills.map((s, i) => {
+    return `<div class="skill-card">
+      <div class="sc-icon">${s.icon}</div>
+      <div class="sc-info">
+        <div class="sc-name">${s.name}</div>
+        <div class="sc-detail">MP: ${s.mpCost} | CD: ${(s.cooldownMs/1000).toFixed(1)}s | 范围: ${s.range}</div>
+      </div>
+      <div class="sc-key">${i+1}</div>
+    </div>`;
+  }).join('');
+}
+
+// 技能冷却本地倒计时
+function updateSkillCooldowns(dt) {
+  for (const s of skills) {
+    if (s.cooldownLeft > 0) {
+      s.cooldownLeft = Math.max(0, s.cooldownLeft - dt);
+      const cdEl = document.getElementById(`cd-${s.skillId}`);
+      if (cdEl) {
+        if (s.cooldownLeft > 0) {
+          cdEl.style.display = 'flex';
+          cdEl.textContent = (s.cooldownLeft/1000).toFixed(1);
+        } else {
+          cdEl.style.display = 'none';
+        }
+      }
+    }
+  }
+}
+
+// NPC对话框
+function showNpcDialog(json) {
+  const dlg = document.getElementById('npcDialog');
+  let html = `<span class="nd-close" onclick="closeNpcDialog()">×</span>`;
+  html += `<div class="nd-name">${json.name}</div>`;
+  html += `<div class="nd-text">${json.dialog}</div>`;
+  if (json.options && json.options.length > 0) {
+    html += '<div class="nd-options">';
+    for (const opt of json.options) {
+      let onclick = '';
+      if (opt.type === 'accept_quest') onclick = `acceptQuest(${opt.questId})`;
+      else if (opt.type === 'complete_quest') onclick = `completeQuest(${opt.questId})`;
+      else if (opt.type === 'heal') onclick = `closeNpcDialog();showToast('已完全恢复','success')`;
+      else if (opt.type === 'shop') onclick = `closeNpcDialog();showToast('商店功能开发中','info')`;
+      html += `<div class="nd-opt" onclick="${onclick}">${opt.label}</div>`;
+    }
+    html += '</div>';
+  }
+  dlg.innerHTML = html;
+  dlg.style.display = 'block';
+}
+
+function closeNpcDialog() {
+  document.getElementById('npcDialog').style.display = 'none';
+}
+
+// Toast
+function showToast(text, type) {
+  const container = document.getElementById('toastContainer');
+  const div = document.createElement('div');
+  div.className = `toast ${type||''}`;
+  div.textContent = text;
+  container.appendChild(div);
+  setTimeout(() => div.remove(), 3000);
+}
+
+// 聊天
+function addChat(from, text, uid) {
+  const chat = document.getElementById('chatMessages');
+  const time = new Date().toTimeString().slice(0, 5);
+  let color = '#c0d0e0';
+  if (from === 'system') color = '#f0c040';
+  else if (uid !== undefined) { const hue = (uid*47)%360; color = `hsl(${hue},60%,65%)`; }
+  const div = document.createElement('div');
+  div.className = 'chat-msg' + (from === 'system' ? ' system' : '');
+  if (from === 'system') div.innerHTML = `<span class="chat-time">${time}</span>${escapeHtml(text)}`;
+  else div.innerHTML = `<span class="chat-time">${time}</span><span class="chat-from" style="color:${color}">${escapeHtml(from)}:</span> ${escapeHtml(text)}`;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+  while (chat.children.length > 100) chat.removeChild(chat.firstChild);
+}
+
+function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// Tab切换
+const tabOrder = ['chat','players','inventory','quests','skills','stats'];
+let currentTab = 'chat';
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === `tab-${name}`));
+  currentTab = name;
+}
+function cycleTab() {
+  const idx = tabOrder.indexOf(currentTab);
+  switchTab(tabOrder[(idx+1) % tabOrder.length]);
+}
+
+// ════════════════════════════════════════════════════════════════
+// 主循环
+// ════════════════════════════════════════════════════════════════
+let lastFrame = Date.now();
+function gameLoop() {
+  const now = Date.now();
+  const dt = now - lastFrame;
+  lastFrame = now;
+  if (connected) update(dt);
+  render();
+  requestAnimationFrame(gameLoop);
+}
+gameLoop();
+</script>
+</body>
+</html>

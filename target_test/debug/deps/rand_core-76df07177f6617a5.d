@@ -1,0 +1,12 @@
+E:\ai\rust-mmo-gate\target_test\debug\deps\rand_core-76df07177f6617a5.d: C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\lib.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\block.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\error.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\impls.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\le.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\os.rs
+
+E:\ai\rust-mmo-gate\target_test\debug\deps\librand_core-76df07177f6617a5.rlib: C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\lib.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\block.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\error.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\impls.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\le.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\os.rs
+
+E:\ai\rust-mmo-gate\target_test\debug\deps\librand_core-76df07177f6617a5.rmeta: C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\lib.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\block.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\error.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\impls.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\le.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\os.rs
+
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\lib.rs:
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\block.rs:
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\error.rs:
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\impls.rs:
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\le.rs:
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rand_core-0.6.4\src\os.rs:

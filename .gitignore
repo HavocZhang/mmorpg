@@ -1,0 +1,36 @@
+# Rust
+/target
+/target_unit
+**/*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env (keep templates, ignore actual configs)
+.env
+.env.local
+.env.dev
+.env.prod
+.env.test
+
+# Logs
+*.log
+logs/
+
+# Web client
+web-client/node_modules/
+web-client/stability_reports/
+web-client/stability_run*.log
+web-client/stability_small*.log
+
+# Runtime artifacts
+*.pid
+*.dump

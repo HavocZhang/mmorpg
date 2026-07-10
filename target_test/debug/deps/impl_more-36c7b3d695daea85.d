@@ -1,0 +1,12 @@
+E:\ai\rust-mmo-gate\target_test\debug\deps\impl_more-36c7b3d695daea85.d: C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\lib.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\as_ref.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\deref.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\display.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\error.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\from.rs
+
+E:\ai\rust-mmo-gate\target_test\debug\deps\libimpl_more-36c7b3d695daea85.rlib: C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\lib.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\as_ref.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\deref.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\display.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\error.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\from.rs
+
+E:\ai\rust-mmo-gate\target_test\debug\deps\libimpl_more-36c7b3d695daea85.rmeta: C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\lib.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\as_ref.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\deref.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\display.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\error.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\from.rs
+
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\lib.rs:
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\as_ref.rs:
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\deref.rs:
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\display.rs:
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\error.rs:
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\impl-more-0.3.1\src\from.rs:

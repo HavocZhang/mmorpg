@@ -1,0 +1,17 @@
+# Rust 代码格式化强制规范
+edition = "2021"
+max_width = 100
+hard_tabs = false
+tab_spaces = 4
+newline_style = "Unix"
+use_small_heuristics = "Default"
+fn_call_width = 80
+attr_fn_like_width = 70
+struct_lit_width = 50
+struct_variant_width = 35
+chain_width = 80
+single_line_if_else_max_width = 50
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
+reorder_imports = true
+reorder_modules = true

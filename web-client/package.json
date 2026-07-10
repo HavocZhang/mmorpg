@@ -1,0 +1,13 @@
+{
+  "name": "mmo-gate-web-client",
+  "version": "1.0.0",
+  "description": "WebSocket-to-TCP proxy + web client for Rust MMO Gateway stress testing",
+  "main": "proxy.js",
+  "scripts": {
+    "start": "node proxy.js",
+    "proxy": "node proxy.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

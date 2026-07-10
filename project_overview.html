@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rust MMO 百万在线网关集群 - 项目概览</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --card: #161b22;
+            --border: #30363d;
+            --text: #e6edf3;
+            --text-dim: #8b949e;
+            --accent: #58a6ff;
+            --green: #3fb950;
+            --orange: #d29922;
+            --red: #f85149;
+            --purple: #bc8cff;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, 'Segoe UI', 'Helvetica Neue', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            padding: 40px 20px;
+            line-height: 1.6;
+        }
+        .container { max-width: 960px; margin: 0 auto; }
+        h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, var(--accent), var(--purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .subtitle { color: var(--text-dim); font-size: 14px; margin-bottom: 32px; }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        .stat-card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+        .stat-value { font-size: 32px; font-weight: 700; color: var(--accent); }
+        .stat-label { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+        .section {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+        .section h2 {
+            font-size: 18px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .module-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+        .module-item {
+            background: #21262d;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 16px;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+        .module-icon {
+            width: 32px; height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+        .module-info { flex: 1; min-width: 0; }
+        .module-name { font-size: 14px; font-weight: 600; color: var(--text); }
+        .module-desc { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+        .module-files { font-size: 11px; color: var(--accent); margin-top: 4px; }
+        pre {
+            background: #21262d;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            overflow-x: auto;
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .tree { color: var(--text-dim); }
+        .tree .dir { color: var(--accent); font-weight: 600; }
+        .tree .file { color: var(--text); }
+        .tree .comment { color: var(--green); font-style: italic; }
+        .badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .badge-green { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid rgba(63,185,80,0.3); }
+        .badge-orange { background: rgba(210,153,34,0.15); color: var(--orange); border: 1px solid rgba(210,153,34,0.3); }
+        .badge-purple { background: rgba(188,140,255,0.15); color: var(--purple); border: 1px solid rgba(188,140,255,0.3); }
+        .test-list { display: flex; flex-direction: column; gap: 8px; }
+        .test-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            background: #21262d;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            font-size: 13px;
+        }
+        .test-icon { font-size: 16px; }
+        .config-list {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+        .config-item {
+            background: #21262d;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px 14px;
+            font-size: 13px;
+            font-family: monospace;
+        }
+        .config-item .label { color: var(--text-dim); font-size: 11px; }
+        .status-bar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: var(--text-dim);
+        }
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+        }
+        .dot-green { background: var(--green); }
+        .dot-orange { background: var(--orange); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Rust MMO 百万在线网关集群</h1>
+        <p class="subtitle">支持万人团战、无限扩容、TDD+BDD全测试覆盖 | Rust Edition 2021</p>
+
+        <div class="status-bar">
+            <div class="status-item"><span class="status-dot dot-green"></span> cargo check 通过</div>
+            <div class="status-item"><span class="status-dot dot-green"></span> 11 模块全部编译</div>
+            <div class="status-item"><span class="status-dot dot-green"></span> BDD+TDD 测试骨架就绪</div>
+            <div class="status-item"><span class="status-dot dot-orange"></span> Rust 1.95.0 (固定版本)</div>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value">68</div>
+                <div class="stat-label">项目文件</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">4,691</div>
+                <div class="stat-label">Rust 代码行数</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">11</div>
+                <div class="stat-label">核心模块</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">7+4</div>
+                <div class="stat-label">BDD+TDD 测试</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>核心模块架构</h2>
+            <div class="module-grid">
+                <div class="module-item">
+                    <div class="module-icon" style="background:rgba(88,166,255,0.15)">config</div>
+                    <div class="module-info">
+                        <div class="module-name">配置中心</div>
+                        <div class="module-desc">AppConfig 全局配置加载</div>
+                        <div class="module-files">mod.rs · app_config.rs</div>
+                    </div>
+                </div>
+                <div class="module-item">
+                    <div class="module-icon" style="background:rgba(63,185,80,0.15)">found</div>
+                    <div class="module-info">
+                        <div class="module-name">基础底座</div>
+                        <div class="module-desc">日志、指标、雪花ID、错误</div>
+                        <div class="module-files">logger · metric · snowflake · error</div>
+                    </div>
+                </div>
+                <div class="module-item">
+                    <div class="module-icon" style="background:rgba(188,140,255,0.15)">crypto</div>
+                    <div class="module-info">
+                        <div class="module-name">加密校验</div>
+                        <div class="module-desc">AES-GCM 加解密 + CRC32 校验</div>
+                        <div class="module-files">aes_gcm.rs · crc32.rs</div>
+                    </div>
+                </div>
+                <div class="module-item">
+                    <div class="module-icon" style="background:rgba(210,153,34,0.15)">proto</div>
+                    <div class="module-info">
+                        <div class="module-name">协议层</div>
+                        <div class="module-desc">16字节包头 + 变长加密体</div>
+                        <div class="module-files">packet_struct · encoder · decoder</div>
+                    </div>
+                </div>
+                <div class="module-item">
+                    <div class="module-icon" style="background:rgba(248,81,73,0.15)">net</div>
+                    <div class="module-info">
+                        <div class="module-name">网络层</div>
+                        <div class="module-desc">TCP Listener + 握手协议</div>
+                        <div class="module-files">tcp_listener.rs · handshake.rs</div>
+                    </div>
+                </div>
+                <div class="module-item">
+                    <div class="module-icon" style="background:rgba(88,166,255,0.15)">session</div>
+                    <div class="module-info">
+                        <div class="module-name">会话管理</div>
+                        <div class="module-desc">Session 结构 + 管理器 + 心跳</div>
+                        <div class="module-files">session_struct · session_mgr · heartbeat</div>
+                    </div>
+                </div>
+                <div class="module-item">
+                    <div class="module-icon" style="background:rgba(63,185,80,0.15)">io</div>
+                    <div class="module-info">
+                        <div class="module-name">IO 引擎</div>
+                        <div class="module-desc">读写循环 + 包合并 + 优先级</div>
+                        <div class="module-files">read_loop · write_loop · packet_merge · msg_priority</div>
+                    </div>
+                </div>
+                <div class="module-item">
+                    <div class="module-icon" style="background:rgba(188,140,255,0.15)">grpc</div>
+                    <div class="module-info">
+                        <div class="module-name">gRPC 路由</div>
+                        <div class="module-desc">连接池 + 上行/下行转发</div>
+                        <div class="module-files">conn_pool · upstream · downstream</div>
+                    </div>
+                </div>
+                <div class="module-item">
+                    <div class="module-icon" style="background:rgba(210,153,34,0.15)">cluster</div>
+                    <div class="module-info">
+                        <div class="module-name">集群协调</div>
+                        <div class="module-desc">节点注册/心跳/路由/跨网关</div>
+                        <div class="module-files">node_register · heartbeat · route_index · cross_gate</div>
+                    </div>
+                </div>
+                <div class="module-item">
+                    <div class="module-icon" style="background:rgba(248,81,73,0.15)">sec</div>
+                    <div class="module-info">
+                        <div class="module-name">安全限流</div>
+                        <div class="module-desc">速率限制 + IP黑名单 + 审计</div>
+                        <div class="module-files">rate_limit · ip_blacklist · security_audit</div>
+                    </div>
+                </div>
+                <div class="module-item">
+                    <div class="module-icon" style="background:rgba(88,166,255,0.15)">admin</div>
+                    <div class="module-info">
+                        <div class="module-name">运维监控</div>
+                        <div class="module-desc">监控API + Prometheus + 优雅关闭</div>
+                        <div class="module-files">monitor_api · prom_export · graceful_shutdown</div>
+                    </div>
+                </div>
+                <div class="module-item">
+                    <div class="module-icon" style="background:rgba(63,185,80,0.15)">main</div>
+                    <div class="module-info">
+                        <div class="module-name">入口 + 库</div>
+                        <div class="module-desc">main.rs + lib.rs + GateContext</div>
+                        <div class="module-files">main.rs · lib.rs</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>BDD 行为驱动测试 <span class="badge badge-green">7 个 Feature</span></h2>
+            <div class="test-list">
+                <div class="test-item"><span class="test-icon">1️⃣</span> <strong>connect.feature</strong> — TCP连接建立、握手协议、连接超时</div>
+                <div class="test-item"><span class="test-icon">2️⃣</span> <strong>session.feature</strong> — 会话生命周期、心跳保活、超时踢出</div>
+                <div class="test-item"><span class="test-icon">3️⃣</span> <strong>protocol.feature</strong> — 协议编解码、CRC校验、分片重组</div>
+                <div class="test-item"><span class="test-icon">4️⃣</span> <strong>message.feature</strong> — 消息收发、优先级队列、广播推送</div>
+                <div class="test-item"><span class="test-icon">5️⃣</span> <strong>security.feature</strong> — 限流触发、IP封禁、异常检测</div>
+                <div class="test-item"><span class="test-icon">6️⃣</span> <strong>cluster.feature</strong> — 节点注册、路由索引、跨网关消息</div>
+                <div class="test-item"><span class="test-icon">7️⃣</span> <strong>shutdown.feature</strong> — 优雅停机、连接排空、状态保存</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>TDD 单元测试 + Benchmark <span class="badge badge-purple">5 个文件</span></h2>
+            <div class="test-list">
+                <div class="test-item"><span class="test-icon">🧪</span> <strong>tdd_unit/protocol_tests.rs</strong> — 协议编解码、CRC32、AES-GCM 加解密</div>
+                <div class="test-item"><span class="test-icon">⚡</span> <strong>tdd_concurrent/concurrency_tests.rs</strong> — DashMap 并发、Session 管理器竞态</div>
+                <div class="test-item"><span class="test-icon">🛡️</span> <strong>tdd_exception/exception_tests.rs</strong> — 畸形包、超长包、非法 nonce</div>
+                <div class="test-item"><span class="test-icon">🎲</span> <strong>tdd_fuzz/fuzz_tests.rs</strong> — 随机字节流解码 fuzz、随机 nonce 加解密</div>
+                <div class="test-item"><span class="test-icon">📊</span> <strong>benches/gate_bench.rs</strong> — 编解码吞吐量、Session 管理器并发性能</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>工程配置文件</h2>
+            <div class="config-list">
+                <div class="config-item"><div class="label">构建配置</div>Cargo.toml</div>
+                <div class="config-item"><div class="label">Cargo 配置</div>.cargo/config.toml</div>
+                <div class="config-item"><div class="label">工具链固定</div>rust-toolchain.toml</div>
+                <div class="config-item"><div class="label">代码格式化</div>rustfmt.toml</div>
+                <div class="config-item"><div class="label">Lint 规则</div>clippy.toml</div>
+                <div class="config-item"><div class="label">Git 忽略</div>.gitignore</div>
+                <div class="config-item"><div class="label">开发环境</div>.env.dev</div>
+                <div class="config-item"><div class="label">生产环境</div>.env.prod</div>
+                <div class="config-item"><div class="label">构建脚本</div>build.sh</div>
+                <div class="config-item"><div class="label">测试脚本</div>test.sh</div>
+                <div class="config-item"><div class="label">压测脚本</div>bench.sh</div>
+                <div class="config-item"><div class="label">库入口</div>src/lib.rs</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>项目目录结构</h2>
+            <pre class="tree"><span class="dir">rust-mmo-gate/</span>
+├── <span class="file">Cargo.toml</span>                    <span class="comment"># 依赖与编译 profile</span>
+├── <span class="file">rust-toolchain.toml</span>           <span class="comment"># 固定 Rust 1.95.0</span>
+├── <span class="file">.cargo/config.toml</span>            <span class="comment"># Cargo 构建配置</span>
+├── <span class="file">.gitignore</span>                    <span class="comment"># Git 忽略规则</span>
+├── <span class="file">rustfmt.toml</span>                  <span class="comment"># 代码格式化规则</span>
+├── <span class="file">clippy.toml</span>                   <span class="comment"># Clint lint 配置</span>
+├── <span class="file">.env.dev</span>  /  <span class="file">.env.prod</span>      <span class="comment"># 环境变量配置</span>
+├── <span class="file">build.sh</span> / <span class="file">test.sh</span> / <span class="file">bench.sh</span>  <span class="comment"># 工程脚本</span>
+│
+├── <span class="dir">src/</span>
+│   ├── <span class="file">main.rs</span>                     <span class="comment"># 二进制入口</span>
+│   ├── <span class="file">lib.rs</span>                      <span class="comment"># 库入口（供测试/bench引用）</span>
+│   ├── <span class="dir">config/</span>                     <span class="comment"># 配置中心</span>
+│   │   ├── mod.rs · app_config.rs
+│   ├── <span class="dir">foundation/</span>                 <span class="comment"># 基础底座</span>
+│   │   ├── mod.rs · logger.rs · metric.rs · snowflake.rs · error.rs
+│   ├── <span class="dir">crypto/</span>                     <span class="comment"># 加密校验</span>
+│   │   ├── mod.rs · aes_gcm.rs · crc32.rs
+│   ├── <span class="dir">protocol/</span>                   <span class="comment"># 协议层</span>
+│   │   ├── mod.rs · packet_struct.rs · encoder.rs · decoder.rs
+│   ├── <span class="dir">network/</span>                    <span class="comment"># 网络层</span>
+│   │   ├── mod.rs · tcp_listener.rs · handshake.rs
+│   ├── <span class="dir">session/</span>                    <span class="comment"># 会话管理</span>
+│   │   ├── mod.rs · session_struct.rs · session_mgr.rs · heartbeat_check.rs
+│   ├── <span class="dir">io_engine/</span>                  <span class="comment"># IO 引擎</span>
+│   │   ├── mod.rs · read_loop.rs · write_loop.rs · packet_merge.rs · msg_priority.rs
+│   ├── <span class="dir">grpc_router/</span>                <span class="comment"># gRPC 路由</span>
+│   │   ├── mod.rs · conn_pool.rs · upstream.rs · downstream.rs
+│   ├── <span class="dir">cluster/</span>                    <span class="comment"># 集群协调</span>
+│   │   ├── mod.rs · node_register.rs · node_heartbeat.rs · route_index.rs · cross_gate_pubsub.rs
+│   ├── <span class="dir">security/</span>                   <span class="comment"># 安全限流</span>
+│   │   ├── mod.rs · rate_limit.rs · ip_blacklist.rs · security_audit.rs
+│   └── <span class="dir">admin/</span>                      <span class="comment"># 运维监控</span>
+│       ├── mod.rs · monitor_api.rs · prom_export.rs · graceful_shutdown.rs
+│
+├── <span class="dir">tests/</span>
+│   ├── <span class="dir">bdd_feature/</span>                <span class="comment"># BDD 行为测试 (7个)</span>
+│   │   ├── connect.feature · session.feature · protocol.feature
+│   │   ├── message.feature · security.feature · cluster.feature
+│   │   └── shutdown.feature
+│   ├── <span class="dir">tdd_unit/</span>                   <span class="comment"># TDD 单元测试</span>
+│   │   └── protocol_tests.rs
+│   ├── <span class="dir">tdd_concurrent/</span>             <span class="comment"># TDD 并发测试</span>
+│   │   └── concurrency_tests.rs
+│   ├── <span class="dir">tdd_exception/</span>              <span class="comment"># TDD 异常测试</span>
+│   │   └── exception_tests.rs
+│   └── <span class="dir">tdd_fuzz/</span>                   <span class="comment"># TDD Fuzz 测试</span>
+│       └── fuzz_tests.rs
+│
+└── <span class="dir">benches/</span>                        <span class="comment"># 性能压测</span>
+    └── gate_bench.rs</pre>
+        </div>
+
+        <div class="section">
+            <h2>关键技术栈</h2>
+            <div class="config-list">
+                <div class="config-item"><div class="label">异步运行时</div>Tokio (multi-thread)</div>
+                <div class="config-item"><div class="label">无锁并发</div>DashMap + parking_lot</div>
+                <div class="config-item"><div class="label">加密</div>AES-256-GCM</div>
+                <div class="config-item"><div class="label">校验</div>CRC32fast</div>
+                <div class="config-item"><div class="label">序列化</div>MessagePack + Protobuf</div>
+                <div class="config-item"><div class="label">gRPC</div>Tonic</div>
+                <div class="config-item"><div class="label">Redis</div>redis-rs (cluster)</div>
+                <div class="config-item"><div class="label">监控</div>Prometheus + tracing</div>
+                <div class="config-item"><div class="label">HTTP运维</div>Actix-Web</div>
+                <div class="config-item"><div class="label">压测</div>Criterion</div>
+                <div class="config-item"><div class="label">Fuzz</div>rand + 自定义</div>
+                <div class="config-item"><div class="label">错误处理</div>thiserror + anyhow</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

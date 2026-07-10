@@ -1,0 +1,11 @@
+E:\ai\rust-mmo-gate\target_test\debug\deps\pest_generator-37c11f5d5efa7a50.d: C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\pest_generator-2.8.7\src\lib.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\pest_generator-2.8.7\src\macros.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\pest_generator-2.8.7\src\docs.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\pest_generator-2.8.7\src\generator.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\pest_generator-2.8.7\src\parse_derive.rs
+
+E:\ai\rust-mmo-gate\target_test\debug\deps\libpest_generator-37c11f5d5efa7a50.rlib: C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\pest_generator-2.8.7\src\lib.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\pest_generator-2.8.7\src\macros.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\pest_generator-2.8.7\src\docs.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\pest_generator-2.8.7\src\generator.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\pest_generator-2.8.7\src\parse_derive.rs
+
+E:\ai\rust-mmo-gate\target_test\debug\deps\libpest_generator-37c11f5d5efa7a50.rmeta: C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\pest_generator-2.8.7\src\lib.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\pest_generator-2.8.7\src\macros.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\pest_generator-2.8.7\src\docs.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\pest_generator-2.8.7\src\generator.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\pest_generator-2.8.7\src\parse_derive.rs
+
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\pest_generator-2.8.7\src\lib.rs:
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\pest_generator-2.8.7\src\macros.rs:
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\pest_generator-2.8.7\src\docs.rs:
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\pest_generator-2.8.7\src\generator.rs:
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\pest_generator-2.8.7\src\parse_derive.rs:

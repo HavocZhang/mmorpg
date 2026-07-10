@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package gate;
+
+// 逻辑服服务定义
+// 网关作为 gRPC 客户端，逻辑服作为 gRPC 服务端
+service LogicService {
+  // 上行消息转发：客户端 -> 网关 -> 逻辑服
+  // 响应中携带需要下发给玩家的消息
+  rpc ForwardMessage(ForwardRequest) returns (ForwardResponse);
+
+  // 批量上行消息（团战场景聚合后批量发送）
+  rpc ForwardMessageBatch(ForwardBatchRequest) returns (ForwardResponse);
+
+  // 玩家上线通知
+  rpc PlayerOnline(PlayerOnlineRequest) returns (PlayerOnlineResponse);
+
+  // 玩家离线通知
+  rpc PlayerOffline(PlayerOfflineRequest) returns (PlayerOfflineResponse);
+}
+
+// 上行消息请求
+message ForwardRequest {
+  uint64 player_uid = 1;   // 玩家UID
+  uint32 msg_id = 2;       // 消息ID
+  bytes payload = 3;        // 消息体
+}
+
+// 批量上行消息请求
+message ForwardBatchRequest {
+  repeated ForwardRequest messages = 1;
+}
+
+// 下行消息（逻辑服 -> 网关 -> 客户端）
+message DownstreamMessage {
+  uint64 target_uid = 1;   // 目标玩家UID（0 = 广播所有玩家）
+  uint32 msg_id = 2;       // 消息ID
+  bytes payload = 3;        // 消息体
+  uint32 priority = 4;      // 优先级: 0=低 1=中 2=高
+}
+
+// 上行消息响应（携带需要下发的消息）
+message ForwardResponse {
+  repeated DownstreamMessage messages = 1;
+}
+
+// 玩家上线通知
+message PlayerOnlineRequest {
+  uint64 player_uid = 1;
+  uint64 session_id = 2;
+  string gate_node = 3;
+}
+
+message PlayerOnlineResponse {
+  bool ok = 1;
+  repeated DownstreamMessage messages = 2; // 上线时需要下发的消息
+}
+
+// 玩家离线通知
+message PlayerOfflineRequest {
+  uint64 player_uid = 1;
+  uint64 session_id = 2;
+  string reason = 3;
+}
+
+message PlayerOfflineResponse {
+  bool ok = 1;
+  repeated DownstreamMessage messages = 2; // 离线时需要下发的消息
+}

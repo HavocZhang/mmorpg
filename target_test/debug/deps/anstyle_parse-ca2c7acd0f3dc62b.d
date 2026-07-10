@@ -1,0 +1,11 @@
+E:\ai\rust-mmo-gate\target_test\debug\deps\anstyle_parse-ca2c7acd0f3dc62b.d: C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\lib.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\params.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\mod.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\definitions.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\table.rs
+
+E:\ai\rust-mmo-gate\target_test\debug\deps\libanstyle_parse-ca2c7acd0f3dc62b.rlib: C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\lib.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\params.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\mod.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\definitions.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\table.rs
+
+E:\ai\rust-mmo-gate\target_test\debug\deps\libanstyle_parse-ca2c7acd0f3dc62b.rmeta: C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\lib.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\params.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\mod.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\definitions.rs C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\table.rs
+
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\lib.rs:
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\params.rs:
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\mod.rs:
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\definitions.rs:
+C:\Users\havoc\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\anstyle-parse-1.0.0\src\state\table.rs:
