@@ -1,0 +1,342 @@
+syntax = "proto3";
+
+package game;
+
+// ============================================================================
+// Rust MMO 游戏协议 - 客户端无关框架
+// 对标 ET 框架的协议层定义
+// 消息ID 规约：
+//   1xxx = 上行握手/基础操作
+//   5xxx = 下行玩家自身状态
+//   6xxx = 下行战斗相关
+//   7xxx = 下行聊天
+//   8xxx = 下行场景玩家动态
+//   9xxx = 下行列表查询
+// ============================================================================
+
+// ============================================================================
+// 上行消息（Client → Server）
+// ============================================================================
+
+// 握手登录
+message LoginRequest {
+  uint64 uid = 1;
+  string token = 2;
+  uint32 version = 3;
+  uint64 timestamp = 4;
+}
+
+// 基础攻击
+message AttackRequest {
+  uint64 target_uid = 1;
+}
+
+// 技能攻击
+message SkillAttackRequest {
+  uint32 skill_id = 1;
+  uint64 target_uid = 2;
+}
+
+// 拾取掉落
+message PickupRequest {
+  uint64 drop_id = 1;
+}
+
+// 装备/卸下
+message EquipRequest {
+  uint32 item_id = 1;
+  string slot = 2; // "weapon" | "armor" | "accessory"
+}
+
+// 接受任务
+message AcceptQuestRequest {
+  uint32 quest_id = 1;
+}
+
+// 完成任务
+message CompleteQuestRequest {
+  uint32 quest_id = 1;
+}
+
+// NPC交互
+message NpcInteractRequest {
+  uint32 npc_id = 1;
+}
+
+// 使用物品
+message UseItemRequest {
+  uint32 item_id = 1;
+}
+
+// 商店购买
+message ShopBuyRequest {
+  uint32 item_id = 1;
+  uint32 count = 2;
+}
+
+// 商店卖出
+message ShopSellRequest {
+  uint32 item_id = 1;
+  uint32 count = 2;
+}
+
+// 装备强化
+message EnhanceRequest {
+  string slot = 1; // "weapon" | "armor" | "accessory"
+}
+
+// 聊天
+message ChatRequest {
+  string text = 1;
+  string channel = 2; // "world" | "party" | "guild"
+}
+
+// 组队邀请
+message PartyInviteRequest {
+  uint64 target_uid = 1;
+}
+
+// 接受组队
+message PartyAcceptRequest {
+  uint64 inviter_uid = 1;
+}
+
+// 离开队伍
+message PartyLeaveRequest {}
+
+// 移动
+message MoveRequest {
+  float x = 1;
+  float y = 2;
+  uint32 dir = 3;
+}
+
+// 查询附近玩家
+message QueryPlayersRequest {}
+
+// 查询实体
+message QueryEntitiesRequest {}
+
+// ============================================================================
+// 下行消息（Server → Client） - 嵌套结构定义在前
+// ============================================================================
+
+// 背包物品
+message InventoryItem {
+  uint32 item_id = 1;
+  uint32 count = 2;
+  string name = 3;
+  string item_type = 4;
+  string icon = 5;
+}
+
+// 装备槽
+message EquipmentSlot {
+  uint32 item_id = 1;
+  string name = 2;
+  string icon = 3;
+  uint32 enhance_level = 4;
+}
+
+// 任务条目
+message QuestEntry {
+  uint32 quest_id = 1;
+  string name = 2;
+  uint32 progress = 3;
+  uint32 target = 4;
+}
+
+// 掉落物品
+message DropItem {
+  uint64 drop_id = 1;
+  uint32 item_id = 2;
+  uint32 count = 3;
+  float x = 4;
+  float y = 5;
+}
+
+// 玩家列表条目
+message PlayerListEntry {
+  uint64 uid = 1;
+  string name = 2;
+  float x = 3;
+  float y = 4;
+  uint32 level = 5;
+}
+
+// 实体列表条目
+message EntityListEntry {
+  uint64 entity_id = 1;
+  uint32 def_id = 2;
+  string name = 3;
+  float x = 4;
+  float y = 5;
+  int32 hp = 6;
+  int32 max_hp = 7;
+  uint32 level = 8;
+  string npc_type = 9; // npc 才有
+  uint32 quest_id = 10; // quest_giver npc 才有
+}
+
+// 玩家属性 5001
+message PlayerStats {
+  uint64 uid = 1;
+  string name = 2;
+  int32 hp = 3;
+  int32 max_hp = 4;
+  int32 mp = 5;
+  int32 max_mp = 6;
+  uint32 level = 7;
+  uint32 exp = 8;
+  uint32 max_exp = 9;
+  float x = 10;
+  float y = 11;
+  int32 atk = 12;
+  int32 def = 13;
+  uint32 gold = 14;
+  uint32 class_id = 15;
+  uint32 talent_points = 16;
+}
+
+// 经验更新 5002
+message ExpUpdate {
+  uint32 exp = 1;
+  uint32 max_exp = 2;
+  uint32 level = 3;
+  uint32 gained = 4;
+}
+
+// 背包更新 5003
+message InventoryUpdate {
+  repeated InventoryItem items = 1;
+}
+
+// 装备更新 5004
+message EquipmentUpdate {
+  EquipmentSlot weapon = 1;
+  EquipmentSlot armor = 2;
+  EquipmentSlot accessory = 3;
+}
+
+// 任务更新 5005
+message QuestUpdate {
+  repeated QuestEntry quests = 1;
+}
+
+// NPC对话 5006
+message NpcDialog {
+  uint32 npc_id = 1;
+  string name = 2;
+  string dialog = 3;
+  string options_json = 4; // 选项用 JSON 字符串保持灵活
+}
+
+// 战斗结果 6001
+message CombatResult {
+  uint64 target_uid = 1;
+  int32 damage = 2;
+  int32 target_hp = 3;
+  bool crit = 4;
+  bool miss = 5;
+  int32 player_hp = 6;
+  uint32 exp_gained = 7;
+  string error = 8; // 非0表示错误: invalid_skill/cooldown/not_enough_mp/out_of_range/miss
+  uint32 cooldown_left = 9;
+}
+
+// 实体状态 6002
+message EntityState {
+  uint64 entity_id = 1;
+  int32 hp = 2;
+  int32 max_hp = 3;
+  uint32 state = 4; // 0=idle 1=patrolling 2=chasing 3=attacking 4=dead 5=respawning
+  float x = 5;
+  float y = 6;
+}
+
+// 实体死亡/掉落 6003
+message EntityDeath {
+  uint64 entity_id = 1;
+  uint64 killer = 2;
+  string mob_name = 3;
+  repeated DropItem drops = 4;
+  uint32 exp = 5;
+}
+
+// 聊天ACK 7001
+message ChatAck {
+  uint32 status = 1;
+  uint64 message_id = 2;
+}
+
+// 聊天广播 7002
+message ChatBroadcast {
+  uint64 from_uid = 1;
+  string from_name = 2;
+  string text = 3;
+  string channel = 4;
+  uint32 msg_type = 5; // 0=normal 1=system 2=guild
+}
+
+// 玩家位置更新 8001
+message PlayerPosition {
+  uint64 uid = 1;
+  float x = 2;
+  float y = 3;
+  uint32 dir = 4;
+}
+
+// 玩家进入 8002
+message PlayerEnter {
+  uint64 uid = 1;
+  string name = 2;
+  float x = 3;
+  float y = 4;
+}
+
+// 玩家离开 8003
+message PlayerLeave {
+  uint64 uid = 1;
+}
+
+// 实体位置更新 8004
+message EntityPosition {
+  uint64 entity_id = 1;
+  float x = 2;
+  float y = 3;
+  int32 hp = 4;
+  int32 max_hp = 5;
+  string name = 6;
+  uint32 def_id = 7;
+  uint32 level = 8;
+}
+
+// 玩家列表 9001
+message PlayerList {
+  repeated PlayerListEntry players = 1;
+}
+
+// 实体列表 9002
+message EntityList {
+  repeated EntityListEntry npcs = 1;
+  repeated EntityListEntry mobs = 2;
+}
+
+// ============================================================================
+// 消息包装器（统一上行/下行消息封装）
+// ============================================================================
+
+// 消息方向
+enum MessageDirection {
+  UNSPECIFIED = 0;
+  UPSTREAM = 1;   // 客户端→服务端
+  DOWNSTREAM = 2; // 服务端→客户端
+}
+
+// 统一消息包装器
+message GameMessage {
+  uint32 msg_id = 1;          // 消息ID (1/1001/5001 等)
+  MessageDirection direction = 2;
+  bytes payload = 3;          // 序列化的具体消息
+  uint64 target_uid = 4;      // 下行：目标玩家(0=广播)；上行：发送者
+}

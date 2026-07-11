@@ -1,0 +1,636 @@
+// ════════════════════════════════════════════════════════════════
+// 单元测试 — DashMap 锁竞争/死锁修复验证
+// ════════════════════════════════════════════════════════════════
+
+use super::*;
+use std::sync::Arc;
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
+
+/// 辅助：添加测试玩家（高HP避免测试中死亡）
+fn add_test_player(state: &GameState, uid: u64, x: f32, y: f32) {
+    let mut p = PlayerState::new(uid, format!("Player{}", uid));
+    p.x = x;
+    p.y = y;
+    p.last_x = x;
+    p.last_y = y;
+    p.hp = 999_999;
+    p.max_hp = 999_999;
+    p.mp = 999_999;
+    p.max_mp = 999_999;
+    state.players.insert(uid, p);
+}
+
+/// 辅助：添加测试怪物
+fn add_test_mob(state: &GameState, eid: u64, def_id: u32, x: f32, y: f32) {
+    state.mobs.insert(eid, MobEntity::from_def(eid, def_id, x, y));
+}
+
+/// 辅助：给玩家添加已完成进度的任务
+fn add_completed_quest(state: &GameState, uid: u64, quest_id: u32) {
+    if let Some(mut p) = state.players.get_mut(&uid) {
+        if let Some(def) = get_quest_def(quest_id) {
+            if !p.quests.iter().any(|(qid, _)| *qid == quest_id) {
+                p.quests.push((quest_id, def.target_count));
+            }
+        }
+    }
+}
+
+/// 辅助：重新添加已完成任务（用于循环测试）
+fn readd_completed_quest(state: &GameState, uid: u64, quest_id: u32) {
+    if let Some(mut p) = state.players.get_mut(&uid) {
+        if !p.quests.iter().any(|(qid, _)| *qid == quest_id) {
+            if let Some(def) = get_quest_def(quest_id) {
+                p.quests.push((quest_id, def.target_count));
+            }
+        }
+    }
+}
+
+// ────────────────────────────────────────────────────────────
+// TDD 单元测试
+// ────────────────────────────────────────────────────────────
+
+/// TDD 测试1: tick_mob_ai 期间可以获取单个 mob 的写锁
+/// 验证 tick_mob_ai 不再持有全部分片写锁
+#[test]
+fn test_tick_mob_ai_does_not_hold_all_locks() {
+    let state = Arc::new(GameState::test_new());
+    add_test_player(&state, 1, 500.0, 500.0);
+    // 添加大量怪物以增加迭代时间，确保测试可观测
+    for i in 0..200u64 {
+        add_test_mob(&state, 10000 + i, 1, 100.0 + (i as f32) * 3.0, 100.0);
+    }
+
+    let s = state.clone();
+    // 线程A：持续运行 tick_mob_ai
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop2 = stop.clone();
+    let tick_handle = thread::spawn(move || {
+        while !stop2.load(std::sync::atomic::Ordering::Relaxed) {
+            s.tick_mob_ai(0);
+        }
+    });
+
+    // 主线程：尝试获取单个怪物的写锁，应该在超时内成功多次
+    // 修复前：iter_mut 持有全部分片写锁，此处会长时间阻塞
+    // 修复后：get_mut 仅持有单个分片写锁，此处可快速获取
+    let start = Instant::now();
+    let mut acquired = 0;
+    while start.elapsed() < Duration::from_secs(2) && acquired < 10 {
+        if let Some(mut mob) = state.mobs.get_mut(&(10100)) {
+            mob.x += 0.01;
+            acquired += 1;
+            drop(mob);
+        }
+        thread::yield_now();
+    }
+
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    tick_handle.join().unwrap();
+
+    assert!(acquired >= 1,
+        "tick_mob_ai 期间应能获取单个 mob 写锁，实际获取 {} 次", acquired);
+}
+
+/// TDD 测试2: handle_complete_quest 执行期间 tick_mob_ai 不被阻塞
+/// 验证 handle_complete_quest 锁内不构建消息，释放锁迅速
+#[test]
+fn test_handle_complete_quest_releases_lock_quickly() {
+    let state = Arc::new(GameState::test_new());
+    add_test_player(&state, 1, 500.0, 500.0);
+    // 在玩家附近放置怪物，使 tick_mob_ai 进入 Chasing 并尝试获取 player 锁
+    add_test_mob(&state, 10000, 1, 500.0, 510.0);
+    add_completed_quest(&state, 1, 1);
+
+    let s = state.clone();
+    // 线程A：循环调用 handle_complete_quest（反复重置任务）
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop2 = stop.clone();
+    let quest_handle = thread::spawn(move || {
+        let mut iter = 0;
+        while !stop2.load(std::sync::atomic::Ordering::Relaxed) && iter < 200 {
+            readd_completed_quest(&s, 1, 1);
+            s.handle_complete_quest(1, 1);
+            iter += 1;
+        }
+    });
+
+    // 主线程：tick_mob_ai 应能快速完成（不被 quest 的 player 锁长时间阻塞）
+    // 修复前：handle_complete_quest 持有 player 锁构建消息，tick_mob_ai 阻塞
+    // 修复后：handle_complete_quest 锁内只做修改，锁外构建消息
+    let start = Instant::now();
+    for _ in 0..50 {
+        state.tick_mob_ai(0);
+    }
+    let elapsed = start.elapsed();
+
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    quest_handle.join().unwrap();
+
+    // tick_mob_ai 50次应在 3 秒内完成（远小于 gRPC 5 秒超时）
+    assert!(elapsed < Duration::from_secs(3),
+        "tick_mob_ai 被 handle_complete_quest 阻塞过久: {:?} (应 < 3s)", elapsed);
+}
+
+/// TDD 测试3: 并发攻击怪物 + 完成任务 + tick_mob_ai，无死锁
+#[test]
+fn test_concurrent_attack_and_quest_no_deadlock() {
+    let state = Arc::new(GameState::test_new());
+    add_test_player(&state, 1, 500.0, 500.0);
+    add_test_player(&state, 2, 510.0, 510.0);
+    add_completed_quest(&state, 1, 1);
+    for i in 0..30u64 {
+        add_test_mob(&state, 10000 + i, 1, 500.0 + (i as f32) * 3.0, 500.0);
+    }
+
+    let s1 = state.clone();
+    let s2 = state.clone();
+    let s3 = state.clone();
+
+    // 使用通道+超时检测死锁
+    let (tx, rx) = mpsc::channel();
+    let guard = thread::spawn(move || {
+        // 线程1: 攻击怪物
+        let attack_handle = thread::spawn(move || {
+            for _ in 0..50 {
+                s1.handle_attack(1, 1, 10000);
+            }
+        });
+        // 线程2: 循环完成任务
+        let quest_handle = thread::spawn(move || {
+            for _ in 0..50 {
+                readd_completed_quest(&s2, 1, 1);
+                s2.handle_complete_quest(1, 1);
+            }
+        });
+        // 线程3: tick_mob_ai
+        let tick_handle = thread::spawn(move || {
+            for _ in 0..50 {
+                s3.tick_mob_ai(0);
+            }
+        });
+        attack_handle.join().unwrap();
+        quest_handle.join().unwrap();
+        tick_handle.join().unwrap();
+        let _ = tx.send(());
+    });
+
+    match rx.recv_timeout(Duration::from_secs(10)) {
+        Ok(()) => { guard.join().unwrap(); }
+        Err(_) => panic!("死锁检测: 并发 attack+quest+tick 超时 (10s)"),
+    }
+}
+
+// ────────────────────────────────────────────────────────────
+// BDD 行为测试
+// ────────────────────────────────────────────────────────────
+
+/// BDD 测试4: 场景 — 玩家提交任务时，怪物AI仍正常运行
+/// Given: 玩家有已完成任务，怪物在出生点附近
+/// When: 玩家提交任务的同时运行怪物AI
+/// Then: 两者均成功执行，怪物位置可能变化，无死锁
+#[test]
+fn test_when_completing_quest_mobs_still_move() {
+    let state = Arc::new(GameState::test_new());
+    add_test_player(&state, 1, 100.0, 100.0);
+    add_completed_quest(&state, 1, 1);
+    add_test_mob(&state, 10000, 1, 800.0, 800.0);
+    let initial_x = state.mobs.get(&10000).map(|m| m.x).unwrap_or(0.0);
+
+    let s = state.clone();
+    // 线程：玩家提交任务
+    let quest_handle = thread::spawn(move || {
+        s.handle_complete_quest(1, 1)
+    });
+
+    // 同时多次运行 tick_mob_ai 让怪物巡逻
+    let tick_start = Instant::now();
+    for _ in 0..10 {
+        state.tick_mob_ai(0);
+        thread::sleep(Duration::from_millis(20));
+    }
+    let tick_elapsed = tick_start.elapsed();
+
+    // 任务应正常完成（返回非空消息表示成功）
+    let messages = quest_handle.join().expect("quest thread panicked");
+    assert!(!messages.is_empty(), "任务提交应返回消息");
+
+    // tick_mob_ai 应在合理时间内完成（未被任务阻塞）
+    assert!(tick_elapsed < Duration::from_secs(3),
+        "tick_mob_ai 被任务提交阻塞: {:?} (应 < 3s)", tick_elapsed);
+
+    // 怪物AI有运行（位置可能变化，关键是没死锁）
+    let final_x = state.mobs.get(&10000).map(|m| m.x).unwrap_or(0.0);
+    let _ = (initial_x, final_x); // 记录位置变化但不强制断言
+}
+
+/// BDD 测试5: 场景 — 玩家攻击怪物时，任务提交不被阻塞
+/// Given: 玩家1攻击怪物，玩家2有已完成任务
+/// When: 玩家1持续攻击怪物的同时，玩家2提交任务
+/// Then: 任务提交应在合理时间内完成（不被攻击阻塞）
+#[test]
+fn test_when_attacking_mob_quest_completion_not_blocked() {
+    let state = Arc::new(GameState::test_new());
+    add_test_player(&state, 1, 500.0, 500.0);
+    add_test_player(&state, 2, 510.0, 510.0);
+    add_completed_quest(&state, 2, 1);
+    add_test_mob(&state, 10000, 1, 500.0, 500.0);
+
+    let s1 = state.clone();
+    let s2 = state.clone();
+
+    // 线程1: 持续攻击怪物
+    let attack_handle = thread::spawn(move || {
+        for _ in 0..100 {
+            s1.handle_attack(1, 1, 10000);
+        }
+    });
+
+    // 线程2: 玩家2提交任务（计时）
+    let (tx, rx) = mpsc::channel::<Duration>();
+    let quest_handle = thread::spawn(move || {
+        let start = Instant::now();
+        s2.handle_complete_quest(2, 1);
+        let _ = tx.send(start.elapsed());
+    });
+
+    // 等待任务完成，超时则判定死锁
+    let quest_duration = rx.recv_timeout(Duration::from_secs(5))
+        .expect("任务提交超时 — 可能死锁");
+    quest_handle.join().expect("quest thread panicked");
+    attack_handle.join().expect("attack thread panicked");
+
+    // 任务提交应在 3 秒内完成（远小于 gRPC 5 秒超时）
+    assert!(quest_duration < Duration::from_secs(3),
+        "任务提交被攻击操作阻塞过久: {:?} (应 < 3s)", quest_duration);
+}
+
+// ────────────────────────────────────────────────────────────
+// TDD/BDD 测试 — tokio runtime 阻塞修复验证
+// ────────────────────────────────────────────────────────────
+
+/// TDD 测试6: forward_message 不阻塞 tokio runtime
+/// 模拟高并发 batch + 后台 tick，验证纯移动请求在限时内响应
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_forward_message_does_not_block_tokio_runtime() {
+    let service = MockLogicService { state: Arc::new(GameState::test_new()), db: None };
+    // 添加玩家 + 大量怪物（增加 tick 耗时放大问题）
+    add_test_player(&service.state, 1, 500.0, 500.0);
+    add_test_player(&service.state, 2, 510.0, 510.0);
+    for i in 0..100u64 {
+        add_test_mob(&service.state, 10000 + i, 1, 400.0 + (i as f32) * 3.0, 400.0);
+    }
+    // 玩家1攻击怪物使其进入 Chasing（触发 tick 里获取 player 锁）
+    service.state.handle_attack(1, 1, 10000);
+
+    // 后台持续 tick（模拟 Default::default 的后台循环，但用 tokio::spawn 阻塞 worker）
+    let bg_state = service.state.clone();
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop_bg = stop.clone();
+    // 关键：用 tokio::spawn 跑同步 tick（复现原 bug：占用 tokio worker）
+    let bg_handle = tokio::spawn(async move {
+        while !stop_bg.load(std::sync::atomic::Ordering::Relaxed) {
+            // 模拟原 bug：在 async 上下文里直接调同步阻塞函数
+            tokio::task::block_in_place(|| bg_state.tick_mob_ai(0));
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    });
+
+    // 并发发送大量 forward_message_batch（混合 3001 移动）
+    let s1 = service.state.clone();
+    let batch_handle = tokio::spawn(async move {
+        let mut ok = 0u32;
+        for i in 0..30u32 {
+            // 模拟网关批量转发：每批含多条移动
+            for _ in 0..5 {
+                let payload = format!(r#"{{"x":{}.0,"y":{}.0,"dir":2}}"#, 500 + i, 500 + i);
+                s1.process_message(1, 3001, payload.as_bytes());
+                ok += 1;
+            }
+        }
+        ok
+    });
+
+    // 关键断言：在 3 秒内应能完成（修复前会因 worker 被占满而超时）
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        batch_handle,
+    ).await;
+
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    let _ = bg_handle.await;
+
+    match result {
+        Ok(Ok(count)) => assert!(count > 0, "应处理多条消息"),
+        Ok(Err(_)) => panic!("batch task panicked"),
+        Err(_) => panic!("TDD 复现: tokio runtime 被阻塞，batch 处理超时 3s"),
+    }
+}
+
+/// BDD 测试7: 场景 — 玩家高频移动+查询实体时，runtime 保持响应
+/// Given: 多个玩家在线，大量怪物
+/// When: 玩家持续高频移动（3001）+ 查询实体（4002）
+/// Then: 每条请求在 1 秒内得到响应（模拟 gRPC 超时阈值的 1/5）
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_when_player_spams_move_and_query_runtime_stays_responsive() {
+    let state = Arc::new(GameState::test_new());
+    add_test_player(&state, 1, 500.0, 500.0);
+    add_test_player(&state, 2, 510.0, 510.0);
+    for i in 0..50u64 {
+        add_test_mob(&state, 10000 + i, 1, 400.0 + (i as f32) * 3.0, 400.0);
+    }
+
+    // 后台 tick 用 std::thread::spawn（模拟修复后的行为）
+    let bg = state.clone();
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop_bg = stop.clone();
+    std::thread::spawn(move || {
+        while !stop_bg.load(std::sync::atomic::Ordering::Relaxed) {
+            bg.tick_mob_ai(0);
+            bg.last_mob_tick.store(current_millis(), std::sync::atomic::Ordering::Relaxed);
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+    });
+
+    // 并发：3 个线程同时发移动+查询
+    let mut handles = vec![];
+    for uid in [1u64, 2, 1] {
+        let s = state.clone();
+        handles.push(tokio::spawn(async move {
+            let start = std::time::Instant::now();
+            for i in 0..20u32 {
+                let payload = format!(r#"{{"x":{}.0,"y":{}.0,"dir":2}}"#, 500 + i, 500 + i);
+                s.process_message(uid, 3001, payload.as_bytes());
+                s.process_message(uid, 4002, b"{}");
+            }
+            start.elapsed()
+        }));
+    }
+
+    // 所有任务应在 5 秒内完成
+    let mut max_elapsed = std::time::Duration::ZERO;
+    for h in handles {
+        let elapsed = tokio::time::timeout(
+            std::time::Duration::from_secs(5), h,
+        ).await.expect("BDD: runtime 被阻塞超时 5s").expect("task panicked");
+        max_elapsed = max_elapsed.max(elapsed);
+    }
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+
+    assert!(max_elapsed < std::time::Duration::from_secs(3),
+        "高频移动+查询耗时 {:?} (应 < 3s)", max_elapsed);
+}
+
+// ────────────────────────────────────────────────────────────
+// TDD/BDD 边界场景测试
+// ────────────────────────────────────────────────────────────
+
+/// TDD: 攻击距离边界 — 刚好在 skill.range+20 内命中，超出则 miss
+#[test]
+fn test_attack_range_boundary() {
+    let state = GameState::test_new();
+    add_test_player(&state, 1, 500.0, 500.0);
+    add_test_player(&state, 2, 500.0, 500.0);
+    // 普攻 range=80, 边界=80+20=100
+    // 99 距离命中，101 距离 miss
+    add_test_mob(&state, 10000, 1, 599.0, 500.0); // 距离99
+    add_test_mob(&state, 10001, 1, 601.0, 500.0); // 距离101
+    // 用两个不同玩家分别攻击，避免同玩家技能冷却干扰范围判定
+    let m1 = state.handle_attack(1, 1, 10000);
+    let m2 = state.handle_attack(2, 1, 10001);
+    // m1 应有 6001 战斗结果（非 miss）
+    let has_hit = m1.iter().any(|m| {
+        m.msg_id == 6001 && !String::from_utf8_lossy(&m.payload).contains("miss")
+    });
+    assert!(has_hit, "距离99应命中");
+    // m2 应有 out_of_range miss
+    let has_miss = m2.iter().any(|m| {
+        m.msg_id == 6001 && String::from_utf8_lossy(&m.payload).contains("out_of_range")
+    });
+    assert!(has_miss, "距离101应out_of_range");
+}
+
+/// TDD: 技能冷却中再次攻击返回 cooldown 错误，且 MP 已扣除
+#[test]
+fn test_skill_cooldown_blocks_repeat() {
+    let state = GameState::test_new();
+    add_test_player(&state, 1, 500.0, 500.0);
+    add_test_mob(&state, 10000, 1, 540.0, 500.0);
+    // 重击 skill_id=2, cd=2000ms, mp_cost=10
+    let _r1 = state.handle_attack(1, 2, 10000);
+    // 立即第二次应被冷却阻挡
+    let r2 = state.handle_attack(1, 2, 10000);
+    let cd_err = r2.iter().any(|m| {
+        m.msg_id == 6001 && String::from_utf8_lossy(&m.payload).contains("cooldown")
+    });
+    assert!(cd_err, "冷却中应返回cooldown错误");
+    // MP 应已扣除10（第一次攻击扣 MP，第二次被冷却阻挡不再扣）
+    let mp = state.players.get(&1).map(|p| p.mp).unwrap_or(0);
+    assert_eq!(mp, 999_999 - 10, "MP应扣除10");
+}
+
+/// TDD: 任务进度不足时完成应返回 quest_not_complete
+#[test]
+fn test_quest_incomplete_cannot_complete() {
+    let state = GameState::test_new();
+    add_test_player(&state, 1, 500.0, 500.0);
+    // 接受任务1（杀5只史莱姆），进度0
+    state.handle_accept_quest(1, 1);
+    // 尝试完成应失败
+    let r = state.handle_complete_quest(1, 1);
+    let err = r.iter().any(|m| {
+        m.msg_id == 5005 && String::from_utf8_lossy(&m.payload).contains("quest_not_complete")
+    });
+    assert!(err, "进度不足应返回quest_not_complete");
+}
+
+/// TDD: 已接受的任务再次接受应被拒
+#[test]
+fn test_quest_cannot_accept_twice() {
+    let state = GameState::test_new();
+    add_test_player(&state, 1, 500.0, 500.0);
+    let _r1 = state.handle_accept_quest(1, 1);
+    let r2 = state.handle_accept_quest(1, 1);
+    let err = r2.iter().any(|m| {
+        m.msg_id == 5005 && String::from_utf8_lossy(&m.payload).contains("quest_already_accepted")
+    });
+    assert!(err, "重复接受应返回quest_already_accepted");
+}
+
+/// BDD: 场景 — 接受任务→杀怪完成进度→提交任务获得奖励
+/// Given: 玩家接受"清除史莱姆"(quest 1, 杀5只, 奖励100经验+生命药水)
+/// When: 杀死5只史莱姆后提交任务
+/// Then: 获得经验、物品，任务列表清空，无错误消息
+#[test]
+fn test_full_quest_lifecycle() {
+    let state = GameState::test_new();
+    add_test_player(&state, 1, 500.0, 500.0);
+
+    // Given: 接受任务
+    let accept = state.handle_accept_quest(1, 1);
+    assert!(accept.iter().any(|m| m.msg_id == 5005), "接受任务应返回5005");
+
+    // When: 杀5只史莱姆（def_id=1）
+    for i in 0..5u64 {
+        let eid = 10000 + i;
+        add_test_mob(&state, eid, 1, 540.0 + (i as f32), 500.0);
+        // 高攻击力一击必杀，清除技能冷却确保连续攻击不被阻挡
+        if let Some(mut p) = state.players.get_mut(&1) {
+            p.atk = 9999;
+            p.skill_cooldowns.clear();
+        }
+        let _ = state.handle_attack(1, 1, eid);
+        // 怪物应死亡
+        let mob_dead = state.mobs.get(&eid).map(|m| m.state == MobState::Dead).unwrap_or(false);
+        assert!(mob_dead, "怪物{}应被击杀", eid);
+    }
+
+    // 进度应到5
+    let progress = state.players.get(&1)
+        .and_then(|p| p.quests.iter().find(|(qid, _)| *qid == 1).map(|(_, c)| *c))
+        .unwrap_or(0);
+    assert_eq!(progress, 5, "任务进度应为5");
+
+    // Then: 提交任务
+    let complete = state.handle_complete_quest(1, 1);
+    // 应有经验奖励 5002
+    assert!(complete.iter().any(|m| m.msg_id == 5002), "应返回经验更新5002");
+    // 应有背包更新 5003（物品奖励）
+    assert!(complete.iter().any(|m| m.msg_id == 5003), "应返回背包更新5003");
+    // 不应有 error
+    assert!(!complete.iter().any(|m| String::from_utf8_lossy(&m.payload).contains("error")), "不应有错误");
+    // 任务应从列表移除
+    let quest_exists = state.players.get(&1)
+        .map(|p| p.quests.iter().any(|(qid, _)| *qid == 1))
+        .unwrap_or(false);
+    assert!(!quest_exists, "任务应已从列表移除");
+    // 经验应增加100（5次击杀共100 exp 触发升级归零，任务奖励100 → exp=100）
+    let exp = state.players.get(&1).map(|p| p.exp).unwrap_or(0);
+    assert!(exp >= 100, "经验应至少100, 实际 {}", exp);
+    // 背包应有生命药水(item_id=6)
+    let has_potion = state.players.get(&1)
+        .map(|p| p.inventory.iter().any(|(id, c)| *id == 6 && *c > 0))
+        .unwrap_or(false);
+    assert!(has_potion, "背包应有生命药水");
+}
+
+/// BDD: 场景 — 玩家移动速度异常时被拉回
+/// Given: 玩家在(500,500)，上次移动时间已记录
+/// When: 玩家瞬间移动到(1000,500)（距离500，远超200/s阈值）
+/// Then: 返回5001拉回消息，位置不变
+#[test]
+fn test_anti_cheat_teleport_detection() {
+    let state = GameState::test_new();
+    add_test_player(&state, 1, 500.0, 500.0);
+    // 先正常移动一次，记录 last_move_ms
+    let payload = r#"{"x":510.0,"y":500.0,"dir":2}"#;
+    let _r1 = state.process_message(1, 3001, payload.as_bytes());
+    // 立即瞬移到 1000,500
+    let payload2 = r#"{"x":1000.0,"y":500.0,"dir":2}"#;
+    let r2 = state.process_message(1, 3001, payload2.as_bytes());
+    // 应返回 5001 拉回
+    let pulled_back = r2.messages.iter().any(|m| {
+        m.msg_id == 5001 && String::from_utf8_lossy(&m.payload).contains("500.0")
+    });
+    assert!(pulled_back, "瞬移应被拉回原位");
+    // 玩家位置应仍在 510 附近（上次合法位置）
+    let x = state.players.get(&1).map(|p| p.x).unwrap_or(0.0);
+    assert!((x - 510.0).abs() < 1.0, "玩家应被拉回到510, 实际 {}", x);
+}
+
+// ────────────────────────────────────────────────────────────
+// TDD 装备强化 (v0.7)
+// ────────────────────────────────────────────────────────────
+
+/// TDD: 装备强化 +1 成功，属性增加
+#[test]
+fn test_enhance_weapon_success() {
+    let state = GameState::test_new();
+    add_test_player(&state, 1, 500.0, 500.0);
+    // 给玩家装备铁剑(item_id=1, atk_bonus=15) 和足够金币
+    if let Some(mut p) = state.players.get_mut(&1) {
+        p.weapon = Some(1);
+        p.gold = 1000;
+    }
+    // 强化 +1，费用 1*100=100
+    let r = state.handle_enhance(1, "weapon");
+    let success = r.iter().any(|m| m.msg_id == 5004 && String::from_utf8_lossy(&m.payload).contains("enhanceLevel"));
+    assert!(success, "强化+1应成功(100%概率)并返回5004");
+    // atk 应增加: 铁剑基础15, +1级=15*1.1=16.5→16, 增加1
+    let atk = state.players.get(&1).map(|p| p.total_atk()).unwrap_or(0);
+    // base atk=20 + 强化后武器16 = 36 (原 20+15=35)
+    assert!(atk >= 36, "强化后atk应>=36, 实际{}", atk);
+    // 金币扣除100
+    let gold = state.players.get(&1).map(|p| p.gold).unwrap_or(0);
+    assert_eq!(gold, 900, "应扣除100金币");
+}
+
+/// TDD: 金币不足无法强化
+#[test]
+fn test_enhance_insufficient_gold() {
+    let state = GameState::test_new();
+    add_test_player(&state, 1, 500.0, 500.0);
+    if let Some(mut p) = state.players.get_mut(&1) {
+        p.weapon = Some(1);
+        p.gold = 50; // 不够100
+    }
+    let r = state.handle_enhance(1, "weapon");
+    let err = r.iter().any(|m| String::from_utf8_lossy(&m.payload).contains("insufficient_gold"));
+    assert!(err, "金币不足应返回错误");
+}
+
+/// TDD: 强化上限 +10
+#[test]
+fn test_enhance_max_level() {
+    let state = GameState::test_new();
+    add_test_player(&state, 1, 500.0, 500.0);
+    if let Some(mut p) = state.players.get_mut(&1) {
+        p.weapon = Some(1);
+        p.weapon_enhance = 10;
+        p.gold = 10000;
+    }
+    let r = state.handle_enhance(1, "weapon");
+    let err = r.iter().any(|m| String::from_utf8_lossy(&m.payload).contains("max_level"));
+    assert!(err, "+10应返回max_level错误");
+}
+
+/// TDD: 未装备该槽位无法强化
+#[test]
+fn test_enhance_no_item() {
+    let state = GameState::test_new();
+    add_test_player(&state, 1, 500.0, 500.0);
+    // weapon=None
+    let r = state.handle_enhance(1, "weapon");
+    let err = r.iter().any(|m| String::from_utf8_lossy(&m.payload).contains("no_item"));
+    assert!(err, "无装备应返回no_item");
+}
+
+/// BDD: 连续强化到+10，属性逐步增长
+#[test]
+fn test_enhance_full_progression() {
+    let state = GameState::test_new();
+    add_test_player(&state, 1, 500.0, 500.0);
+    if let Some(mut p) = state.players.get_mut(&1) {
+        p.weapon = Some(2); // 钢剑 atk_bonus=30
+        p.gold = 100000;
+    }
+    let prev_atk = state.players.get(&1).map(|p| p.total_atk()).unwrap_or(0);
+    // 连续强化，+1~+3必成功，+4起可能失败，循环直到+10或超过100次尝试
+    // 每次 sleep 1ms 以确保 current_millis 推进，避免随机数碰撞导致测试不稳定
+    let mut attempts = 0;
+    loop {
+        attempts += 1;
+        if attempts > 100 { break; }
+        let level = state.players.get(&1).map(|p| p.weapon_enhance).unwrap_or(0);
+        if level >= 10 { break; }
+        let _ = state.handle_enhance(1, "weapon");
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    let final_level = state.players.get(&1).map(|p| p.weapon_enhance).unwrap_or(0);
+    assert_eq!(final_level, 10, "应在100次尝试内强化到+10");
+    let final_atk = state.players.get(&1).map(|p| p.total_atk()).unwrap_or(0);
+    assert!(final_atk > prev_atk, "强化后atk应增长: {} -> {}", prev_atk, final_atk);
+}

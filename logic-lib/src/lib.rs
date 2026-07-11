@@ -8,3 +8,7 @@ pub mod chat;
 pub mod combat;
 pub mod db;
 pub mod party;
+
+// 暴露游戏协议 proto 类型（由 rust-mmo-gate 的 build.rs 从 proto/game.proto 生成）
+// logic_server 通过 `logic_lib::game_proto::PlayerStats` 等访问生成的类型
+pub use rust_mmo_gate::game_proto;

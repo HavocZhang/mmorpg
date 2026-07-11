@@ -8,6 +8,7 @@
     "proxy": "node proxy.js"
   },
   "dependencies": {
+    "protobufjs": "^8.7.0",
     "ws": "^8.18.0"
   }
 }

@@ -10,9 +10,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         .build_server(true)
         .build_client(true)
         .out_dir(std::env::var("OUT_DIR").unwrap())
-        .compile_protos(&["proto/gate.proto"], &["proto"])?;
+        .compile_protos(&["proto/gate.proto", "proto/game.proto"], &["proto"])?;
 
     println!("cargo:rerun-if-changed=proto/gate.proto");
+    println!("cargo:rerun-if-changed=proto/game.proto");
 
     Ok(())
 }

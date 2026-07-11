@@ -33,9 +33,21 @@ node_modules/
 .env.local
 
 # Reports (generated HTML)
-FINAL_AUDIT_REPORT.html
-FULL_DELIVERY_REPORT.html
-STRESS_TEST_REPORT.html
+*_REPORT.html
+*_report.html
+phase*_report.html
+project_overview.html
+USAGE_GUIDE.html
+BDD_BENCH_REPORT.html
+IMPL_REPORT.html
+TEST_REPORT.html
+bench_output.txt
+
+# Stability/throughput test reports
+web-client/stability_reports/
+
+# IDE local
+.trae/
 
 # Archived old bins
 .archived_bins/

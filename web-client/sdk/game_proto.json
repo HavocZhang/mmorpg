@@ -1,0 +1,797 @@
+{
+  "nested": {
+    "game": {
+      "nested": {
+        "LoginRequest": {
+          "fields": {
+            "uid": {
+              "type": "uint64",
+              "id": 1
+            },
+            "token": {
+              "type": "string",
+              "id": 2
+            },
+            "version": {
+              "type": "uint32",
+              "id": 3
+            },
+            "timestamp": {
+              "type": "uint64",
+              "id": 4
+            }
+          }
+        },
+        "AttackRequest": {
+          "fields": {
+            "targetUid": {
+              "type": "uint64",
+              "id": 1,
+              "protoName": "target_uid"
+            }
+          }
+        },
+        "SkillAttackRequest": {
+          "fields": {
+            "skillId": {
+              "type": "uint32",
+              "id": 1,
+              "protoName": "skill_id"
+            },
+            "targetUid": {
+              "type": "uint64",
+              "id": 2,
+              "protoName": "target_uid"
+            }
+          }
+        },
+        "PickupRequest": {
+          "fields": {
+            "dropId": {
+              "type": "uint64",
+              "id": 1,
+              "protoName": "drop_id"
+            }
+          }
+        },
+        "EquipRequest": {
+          "fields": {
+            "itemId": {
+              "type": "uint32",
+              "id": 1,
+              "protoName": "item_id"
+            },
+            "slot": {
+              "type": "string",
+              "id": 2
+            }
+          }
+        },
+        "AcceptQuestRequest": {
+          "fields": {
+            "questId": {
+              "type": "uint32",
+              "id": 1,
+              "protoName": "quest_id"
+            }
+          }
+        },
+        "CompleteQuestRequest": {
+          "fields": {
+            "questId": {
+              "type": "uint32",
+              "id": 1,
+              "protoName": "quest_id"
+            }
+          }
+        },
+        "NpcInteractRequest": {
+          "fields": {
+            "npcId": {
+              "type": "uint32",
+              "id": 1,
+              "protoName": "npc_id"
+            }
+          }
+        },
+        "UseItemRequest": {
+          "fields": {
+            "itemId": {
+              "type": "uint32",
+              "id": 1,
+              "protoName": "item_id"
+            }
+          }
+        },
+        "ShopBuyRequest": {
+          "fields": {
+            "itemId": {
+              "type": "uint32",
+              "id": 1,
+              "protoName": "item_id"
+            },
+            "count": {
+              "type": "uint32",
+              "id": 2
+            }
+          }
+        },
+        "ShopSellRequest": {
+          "fields": {
+            "itemId": {
+              "type": "uint32",
+              "id": 1,
+              "protoName": "item_id"
+            },
+            "count": {
+              "type": "uint32",
+              "id": 2
+            }
+          }
+        },
+        "EnhanceRequest": {
+          "fields": {
+            "slot": {
+              "type": "string",
+              "id": 1
+            }
+          }
+        },
+        "ChatRequest": {
+          "fields": {
+            "text": {
+              "type": "string",
+              "id": 1
+            },
+            "channel": {
+              "type": "string",
+              "id": 2
+            }
+          }
+        },
+        "PartyInviteRequest": {
+          "fields": {
+            "targetUid": {
+              "type": "uint64",
+              "id": 1,
+              "protoName": "target_uid"
+            }
+          }
+        },
+        "PartyAcceptRequest": {
+          "fields": {
+            "inviterUid": {
+              "type": "uint64",
+              "id": 1,
+              "protoName": "inviter_uid"
+            }
+          }
+        },
+        "PartyLeaveRequest": {
+          "fields": {}
+        },
+        "MoveRequest": {
+          "fields": {
+            "x": {
+              "type": "float",
+              "id": 1
+            },
+            "y": {
+              "type": "float",
+              "id": 2
+            },
+            "dir": {
+              "type": "uint32",
+              "id": 3
+            }
+          }
+        },
+        "QueryPlayersRequest": {
+          "fields": {}
+        },
+        "QueryEntitiesRequest": {
+          "fields": {}
+        },
+        "InventoryItem": {
+          "fields": {
+            "itemId": {
+              "type": "uint32",
+              "id": 1,
+              "protoName": "item_id"
+            },
+            "count": {
+              "type": "uint32",
+              "id": 2
+            },
+            "name": {
+              "type": "string",
+              "id": 3
+            },
+            "itemType": {
+              "type": "string",
+              "id": 4,
+              "protoName": "item_type"
+            },
+            "icon": {
+              "type": "string",
+              "id": 5
+            }
+          }
+        },
+        "EquipmentSlot": {
+          "fields": {
+            "itemId": {
+              "type": "uint32",
+              "id": 1,
+              "protoName": "item_id"
+            },
+            "name": {
+              "type": "string",
+              "id": 2
+            },
+            "icon": {
+              "type": "string",
+              "id": 3
+            },
+            "enhanceLevel": {
+              "type": "uint32",
+              "id": 4,
+              "protoName": "enhance_level"
+            }
+          }
+        },
+        "QuestEntry": {
+          "fields": {
+            "questId": {
+              "type": "uint32",
+              "id": 1,
+              "protoName": "quest_id"
+            },
+            "name": {
+              "type": "string",
+              "id": 2
+            },
+            "progress": {
+              "type": "uint32",
+              "id": 3
+            },
+            "target": {
+              "type": "uint32",
+              "id": 4
+            }
+          }
+        },
+        "DropItem": {
+          "fields": {
+            "dropId": {
+              "type": "uint64",
+              "id": 1,
+              "protoName": "drop_id"
+            },
+            "itemId": {
+              "type": "uint32",
+              "id": 2,
+              "protoName": "item_id"
+            },
+            "count": {
+              "type": "uint32",
+              "id": 3
+            },
+            "x": {
+              "type": "float",
+              "id": 4
+            },
+            "y": {
+              "type": "float",
+              "id": 5
+            }
+          }
+        },
+        "PlayerListEntry": {
+          "fields": {
+            "uid": {
+              "type": "uint64",
+              "id": 1
+            },
+            "name": {
+              "type": "string",
+              "id": 2
+            },
+            "x": {
+              "type": "float",
+              "id": 3
+            },
+            "y": {
+              "type": "float",
+              "id": 4
+            },
+            "level": {
+              "type": "uint32",
+              "id": 5
+            }
+          }
+        },
+        "EntityListEntry": {
+          "fields": {
+            "entityId": {
+              "type": "uint64",
+              "id": 1,
+              "protoName": "entity_id"
+            },
+            "defId": {
+              "type": "uint32",
+              "id": 2,
+              "protoName": "def_id"
+            },
+            "name": {
+              "type": "string",
+              "id": 3
+            },
+            "x": {
+              "type": "float",
+              "id": 4
+            },
+            "y": {
+              "type": "float",
+              "id": 5
+            },
+            "hp": {
+              "type": "int32",
+              "id": 6
+            },
+            "maxHp": {
+              "type": "int32",
+              "id": 7,
+              "protoName": "max_hp"
+            },
+            "level": {
+              "type": "uint32",
+              "id": 8
+            },
+            "npcType": {
+              "type": "string",
+              "id": 9,
+              "protoName": "npc_type"
+            },
+            "questId": {
+              "type": "uint32",
+              "id": 10,
+              "protoName": "quest_id"
+            }
+          }
+        },
+        "PlayerStats": {
+          "fields": {
+            "uid": {
+              "type": "uint64",
+              "id": 1
+            },
+            "name": {
+              "type": "string",
+              "id": 2
+            },
+            "hp": {
+              "type": "int32",
+              "id": 3
+            },
+            "maxHp": {
+              "type": "int32",
+              "id": 4,
+              "protoName": "max_hp"
+            },
+            "mp": {
+              "type": "int32",
+              "id": 5
+            },
+            "maxMp": {
+              "type": "int32",
+              "id": 6,
+              "protoName": "max_mp"
+            },
+            "level": {
+              "type": "uint32",
+              "id": 7
+            },
+            "exp": {
+              "type": "uint32",
+              "id": 8
+            },
+            "maxExp": {
+              "type": "uint32",
+              "id": 9,
+              "protoName": "max_exp"
+            },
+            "x": {
+              "type": "float",
+              "id": 10
+            },
+            "y": {
+              "type": "float",
+              "id": 11
+            },
+            "atk": {
+              "type": "int32",
+              "id": 12
+            },
+            "def": {
+              "type": "int32",
+              "id": 13
+            },
+            "gold": {
+              "type": "uint32",
+              "id": 14
+            },
+            "classId": {
+              "type": "uint32",
+              "id": 15,
+              "protoName": "class_id"
+            },
+            "talentPoints": {
+              "type": "uint32",
+              "id": 16,
+              "protoName": "talent_points"
+            }
+          }
+        },
+        "ExpUpdate": {
+          "fields": {
+            "exp": {
+              "type": "uint32",
+              "id": 1
+            },
+            "maxExp": {
+              "type": "uint32",
+              "id": 2,
+              "protoName": "max_exp"
+            },
+            "level": {
+              "type": "uint32",
+              "id": 3
+            },
+            "gained": {
+              "type": "uint32",
+              "id": 4
+            }
+          }
+        },
+        "InventoryUpdate": {
+          "fields": {
+            "items": {
+              "rule": "repeated",
+              "type": "InventoryItem",
+              "id": 1
+            }
+          }
+        },
+        "EquipmentUpdate": {
+          "fields": {
+            "weapon": {
+              "type": "EquipmentSlot",
+              "id": 1
+            },
+            "armor": {
+              "type": "EquipmentSlot",
+              "id": 2
+            },
+            "accessory": {
+              "type": "EquipmentSlot",
+              "id": 3
+            }
+          }
+        },
+        "QuestUpdate": {
+          "fields": {
+            "quests": {
+              "rule": "repeated",
+              "type": "QuestEntry",
+              "id": 1
+            }
+          }
+        },
+        "NpcDialog": {
+          "fields": {
+            "npcId": {
+              "type": "uint32",
+              "id": 1,
+              "protoName": "npc_id"
+            },
+            "name": {
+              "type": "string",
+              "id": 2
+            },
+            "dialog": {
+              "type": "string",
+              "id": 3
+            },
+            "optionsJson": {
+              "type": "string",
+              "id": 4,
+              "protoName": "options_json"
+            }
+          }
+        },
+        "CombatResult": {
+          "fields": {
+            "targetUid": {
+              "type": "uint64",
+              "id": 1,
+              "protoName": "target_uid"
+            },
+            "damage": {
+              "type": "int32",
+              "id": 2
+            },
+            "targetHp": {
+              "type": "int32",
+              "id": 3,
+              "protoName": "target_hp"
+            },
+            "crit": {
+              "type": "bool",
+              "id": 4
+            },
+            "miss": {
+              "type": "bool",
+              "id": 5
+            },
+            "playerHp": {
+              "type": "int32",
+              "id": 6,
+              "protoName": "player_hp"
+            },
+            "expGained": {
+              "type": "uint32",
+              "id": 7,
+              "protoName": "exp_gained"
+            },
+            "error": {
+              "type": "string",
+              "id": 8
+            },
+            "cooldownLeft": {
+              "type": "uint32",
+              "id": 9,
+              "protoName": "cooldown_left"
+            }
+          }
+        },
+        "EntityState": {
+          "fields": {
+            "entityId": {
+              "type": "uint64",
+              "id": 1,
+              "protoName": "entity_id"
+            },
+            "hp": {
+              "type": "int32",
+              "id": 2
+            },
+            "maxHp": {
+              "type": "int32",
+              "id": 3,
+              "protoName": "max_hp"
+            },
+            "state": {
+              "type": "uint32",
+              "id": 4
+            },
+            "x": {
+              "type": "float",
+              "id": 5
+            },
+            "y": {
+              "type": "float",
+              "id": 6
+            }
+          }
+        },
+        "EntityDeath": {
+          "fields": {
+            "entityId": {
+              "type": "uint64",
+              "id": 1,
+              "protoName": "entity_id"
+            },
+            "killer": {
+              "type": "uint64",
+              "id": 2
+            },
+            "mobName": {
+              "type": "string",
+              "id": 3,
+              "protoName": "mob_name"
+            },
+            "drops": {
+              "rule": "repeated",
+              "type": "DropItem",
+              "id": 4
+            },
+            "exp": {
+              "type": "uint32",
+              "id": 5
+            }
+          }
+        },
+        "ChatAck": {
+          "fields": {
+            "status": {
+              "type": "uint32",
+              "id": 1
+            },
+            "messageId": {
+              "type": "uint64",
+              "id": 2,
+              "protoName": "message_id"
+            }
+          }
+        },
+        "ChatBroadcast": {
+          "fields": {
+            "fromUid": {
+              "type": "uint64",
+              "id": 1,
+              "protoName": "from_uid"
+            },
+            "fromName": {
+              "type": "string",
+              "id": 2,
+              "protoName": "from_name"
+            },
+            "text": {
+              "type": "string",
+              "id": 3
+            },
+            "channel": {
+              "type": "string",
+              "id": 4
+            },
+            "msgType": {
+              "type": "uint32",
+              "id": 5,
+              "protoName": "msg_type"
+            }
+          }
+        },
+        "PlayerPosition": {
+          "fields": {
+            "uid": {
+              "type": "uint64",
+              "id": 1
+            },
+            "x": {
+              "type": "float",
+              "id": 2
+            },
+            "y": {
+              "type": "float",
+              "id": 3
+            },
+            "dir": {
+              "type": "uint32",
+              "id": 4
+            }
+          }
+        },
+        "PlayerEnter": {
+          "fields": {
+            "uid": {
+              "type": "uint64",
+              "id": 1
+            },
+            "name": {
+              "type": "string",
+              "id": 2
+            },
+            "x": {
+              "type": "float",
+              "id": 3
+            },
+            "y": {
+              "type": "float",
+              "id": 4
+            }
+          }
+        },
+        "PlayerLeave": {
+          "fields": {
+            "uid": {
+              "type": "uint64",
+              "id": 1
+            }
+          }
+        },
+        "EntityPosition": {
+          "fields": {
+            "entityId": {
+              "type": "uint64",
+              "id": 1,
+              "protoName": "entity_id"
+            },
+            "x": {
+              "type": "float",
+              "id": 2
+            },
+            "y": {
+              "type": "float",
+              "id": 3
+            },
+            "hp": {
+              "type": "int32",
+              "id": 4
+            },
+            "maxHp": {
+              "type": "int32",
+              "id": 5,
+              "protoName": "max_hp"
+            },
+            "name": {
+              "type": "string",
+              "id": 6
+            },
+            "defId": {
+              "type": "uint32",
+              "id": 7,
+              "protoName": "def_id"
+            },
+            "level": {
+              "type": "uint32",
+              "id": 8
+            }
+          }
+        },
+        "PlayerList": {
+          "fields": {
+            "players": {
+              "rule": "repeated",
+              "type": "PlayerListEntry",
+              "id": 1
+            }
+          }
+        },
+        "EntityList": {
+          "fields": {
+            "npcs": {
+              "rule": "repeated",
+              "type": "EntityListEntry",
+              "id": 1
+            },
+            "mobs": {
+              "rule": "repeated",
+              "type": "EntityListEntry",
+              "id": 2
+            }
+          }
+        },
+        "MessageDirection": {
+          "values": {
+            "UNSPECIFIED": 0,
+            "UPSTREAM": 1,
+            "DOWNSTREAM": 2
+          }
+        },
+        "GameMessage": {
+          "fields": {
+            "msgId": {
+              "type": "uint32",
+              "id": 1,
+              "protoName": "msg_id"
+            },
+            "direction": {
+              "type": "MessageDirection",
+              "id": 2
+            },
+            "payload": {
+              "type": "bytes",
+              "id": 3
+            },
+            "targetUid": {
+              "type": "uint64",
+              "id": 4,
+              "protoName": "target_uid"
+            }
+          }
+        }
+      }
+    }
+  }
+}

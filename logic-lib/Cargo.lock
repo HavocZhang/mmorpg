@@ -1751,6 +1751,7 @@ version = "0.1.0"
 dependencies = [
  "dashmap",
  "parking_lot",
+ "prost",
  "rand 0.8.6",
  "rust-mmo-gate",
  "serde",
@@ -1759,6 +1760,7 @@ dependencies = [
  "tokio",
  "tonic",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

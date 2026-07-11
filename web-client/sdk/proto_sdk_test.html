@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Proto SDK 测试</title>
+  <style>
+    body { font-family: monospace; padding: 16px; background: #1e1e1e; color: #d4d4d4; }
+    h2 { color: #4ec9b0; }
+    .ok { color: #6a9955; }
+    .err { color: #f44747; }
+    pre { background: #2d2d2d; padding: 12px; border-radius: 4px; overflow: auto; }
+    .section { margin-bottom: 24px; border-bottom: 1px solid #444; padding-bottom: 16px; }
+  </style>
+</head>
+<body>
+  <h2>Protobuf 协议 SDK 测试</h2>
+  <div id="status">加载中...</div>
+
+  <div class="section">
+    <h3>1. PlayerStats (5001) 编码/解码往返</h3>
+    <div>原始数据：</div>
+    <pre id="orig"></pre>
+    <div>编码后字节长度：<span id="len"></span></div>
+    <div>解码后数据：</div>
+    <pre id="decoded"></pre>
+    <div id="cmp"></div>
+  </div>
+
+  <div class="section">
+    <h3>2. GameMessage 包装器测试</h3>
+    <pre id="wrap"></pre>
+  </div>
+
+  <div class="section">
+    <h3>3. LoginRequest (1) 编码</h3>
+    <pre id="login"></pre>
+  </div>
+
+  <!-- 1. 通过 CDN 加载 protobufjs -->
+  <script src="https://cdn.jsdelivr.net/npm/protobufjs@7/dist/protobuf.min.js"></script>
+  <!-- 2. 加载 SDK -->
+  <script src="sdk/proto_sdk.js"></script>
+  <script>
+    (async () => {
+      const status = document.getElementById('status');
+      try {
+        // 初始化 SDK（加载 game_proto.json）
+        await ProtoSDK.init();
+        status.innerHTML = '<span class="ok">✓ SDK 初始化成功</span>';
+
+        // ── 测试 1：PlayerStats 编码/解码往返 ──
+        const playerStats = {
+          uid: 12345,
+          name: '测试玩家',
+          hp: 100, maxHp: 100,
+          mp: 50, maxMp: 50,
+          level: 5, exp: 200, maxExp: 500,
+          x: 400, y: 300,
+          atk: 20, def: 10, gold: 1000,
+          classId: 1, talentPoints: 3,
+        };
+        document.getElementById('orig').textContent = JSON.stringify(playerStats, null, 2);
+
+        const buf = ProtoSDK.encode(5001, playerStats);
+        document.getElementById('len').textContent = buf.length + ' bytes';
+
+        const decoded = ProtoSDK.decode(5001, buf);
+        document.getElementById('decoded').textContent = JSON.stringify(decoded, null, 2);
+
+        // 校验关键字段往返一致（uint64 字段 protobufjs 以字符串表示，用 Number 转换比较）
+        const ok = Number(decoded.uid) === playerStats.uid
+          && decoded.name === playerStats.name
+          && decoded.hp === playerStats.hp
+          && decoded.maxHp === playerStats.maxHp
+          && decoded.classId === playerStats.classId
+          && decoded.talentPoints === playerStats.talentPoints;
+        document.getElementById('cmp').innerHTML = ok
+          ? '<span class="ok">✓ 往返校验通过</span>'
+          : '<span class="err">✗ 往返校验失败</span>';
+
+        // ── 测试 2：GameMessage 包装器 ──
+        const payload = ProtoSDK.encode(5001, playerStats);
+        const wrapped = ProtoSDK.wrap(5001, 2, payload, 12345); // 2=DOWNSTREAM
+        const unwrapped = ProtoSDK.unwrap(wrapped);
+        document.getElementById('wrap').textContent = JSON.stringify({
+          msgId: unwrapped.msgId,
+          direction: unwrapped.direction,
+          targetUid: unwrapped.targetUid,
+          payloadLen: unwrapped.payload ? unwrapped.payload.length : 0,
+        }, null, 2);
+
+        // ── 测试 3：LoginRequest ──
+        const loginData = { uid: 999, token: 'abc123', version: 1, timestamp: Date.now() };
+        const loginBuf = ProtoSDK.encode(1, loginData);
+        const loginDecoded = ProtoSDK.decode(1, loginBuf);
+        document.getElementById('login').textContent = JSON.stringify(loginDecoded, null, 2);
+
+      } catch (e) {
+        status.innerHTML = '<span class="err">✗ 错误: ' + (e && e.message ? e.message : e) + '</span>';
+        console.error(e);
+      }
+    })();
+  </script>
+</body>
+</html>
