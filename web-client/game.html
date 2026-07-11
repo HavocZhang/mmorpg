@@ -1,25 +1,50 @@
-<!DOCTYPE html><html lang="zh"><head><meta charset="UTF-8"><title>Rust MMO</title>
+<!DOCTYPE html><html lang="zh"><head><meta charset="UTF-8"><title>Rust MMO v0.4</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}body{background:#0a0a1a;font:13px sans-serif;overflow:hidden;color:#ccc}#app{display:flex;height:100vh;flex-direction:column}
 #top{background:#1a1a2e;padding:4px 14px;display:flex;gap:16px;font-size:12px;border-bottom:1px solid #333;align-items:center}
 #top .v{color:#fff;font-weight:bold}#top .l{color:#777}
+#top .stat-flash{transition:color .15s,transform .15s;display:inline-block}
+#top .stat-up{color:#2ecc71!important;transform:scale(1.3)}
+#top .stat-down{color:#e74c3c!important;transform:scale(1.3)}
 #main{display:flex;flex:1;overflow:hidden}#wrap{flex:1;position:relative;background:#0d0d20}
 canvas{display:block}#status{position:absolute;top:8px;left:8px;font-size:11px;padding:3px 8px;border-radius:4px;background:rgba(0,0,0,.7);font-family:monospace}
-.dmg{position:absolute;font-size:16px;font-weight:bold;pointer-events:none;animation:up .8s ease-out forwards;z-index:5}@keyframes up{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-30px)}}
+.dmg{position:absolute;font-size:16px;font-weight:bold;pointer-events:none;animation:up .8s ease-out forwards;z-index:5}
+.dmg-crit{font-size:22px;color:#ff6b00!important;text-shadow:0 0 8px #ff6b00}
+@keyframes up{0%{opacity:1;transform:translateY(0) scale(1)}50%{opacity:0.9;transform:translateY(-15px) scale(1.3)}100%{opacity:0;transform:translateY(-35px) scale(1)}}
+@keyframes healFloat{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-25px)}}
+@keyframes killBoom{0%{opacity:1;transform:scale(0.2)}50%{opacity:0.8;transform:scale(1.5)}100%{opacity:0;transform:scale(2.5)}}
+@keyframes dropSpark{0%{opacity:0;transform:translateY(10px) scale(0.5)}50%{opacity:1;transform:translateY(-5px) scale(1.2)}100%{opacity:0.8;transform:translateY(0) scale(1)}}
+@keyframes skillBurst{0%{opacity:0.9;transform:scale(0.3);border-radius:50%}100%{opacity:0;transform:scale(2.0);border-radius:50%}}
+.particle{position:absolute;pointer-events:none;z-index:4}
 #side{width:260px;background:#12122a;border-left:1px solid #333;display:flex;flex-direction:column;overflow-y:auto}
-.p{padding:8px 10px;border-bottom:1px solid #222}.p h3{margin-bottom:4px;font-size:12px;color:#888}.bar{height:5px;background:#333;border-radius:3px;margin:2px 0}.bar div{height:100%;border-radius:3px;transition:width .3s}.hp div{background:#e74c3c}.mp div{background:#3498db}.xp div{background:#f39c12}
+.p{padding:8px 10px;border-bottom:1px solid #222}.p h3{margin-bottom:4px;font-size:12px;color:#888;display:flex;justify-content:space-between;align-items:center}
+.p h3 .sort-btn{font-size:10px;padding:1px 6px;background:#222;border:1px solid #444;border-radius:2px;cursor:pointer;color:#888}.p h3 .sort-btn:hover{color:#fff;background:#444}
+.bar{height:5px;background:#333;border-radius:3px;margin:2px 0}.bar div{height:100%;border-radius:3px;transition:width .3s}.hp div{background:#e74c3c}.mp div{background:#3498db}.xp div{background:#f39c12}
 .item{display:flex;gap:6px;padding:3px 0;border-bottom:1px solid #1a1a33;font-size:11px;align-items:center}.item:hover{background:#1a1a44}.abtn{padding:1px 5px;background:#222;border-radius:3px;font-size:10px;cursor:pointer;margin-left:4px;color:#aaa}.abtn:hover{color:#fff;background:#444}
+.abtn.eqp-btn{background:#2a5a3a;color:#2ecc71}.abtn.eqp-btn:hover{background:#3a7a4a;color:#fff}
 #chat{flex:1;overflow-y:auto;padding:6px;font-size:11px;min-height:0;line-height:1.5}#cin{width:100%;padding:5px 8px;background:#1a1a33;border:1px solid #333;color:#fff;font-size:12px;outline:0}
 #bot{background:#1a1a2e;padding:4px 12px;display:flex;gap:6px;align-items:center;border-top:1px solid #333}
 .sk{width:34px;height:34px;border:1px solid #555;border-radius:4px;text-align:center;line-height:33px;font-size:15px;background:#1a1a33;cursor:pointer;position:relative}.sk:hover{background:#2a2a55}#pt{color:#f39c12;font-size:11px;margin-left:8px}
-#dlg{display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#1a1a3e;border:2px solid #555;border-radius:8px;padding:16px 20px;min-width:300px;z-index:100;box-shadow:0 0 20px rgba(0,0,0,.5)}#dlg h2{color:#f39c12;font-size:14px;margin-bottom:8px}#dlg p{color:#ccc;font-size:12px;margin:4px 0;line-height:1.4}#dlg button{margin:6px 6px 0 0;padding:5px 14px;cursor:pointer;background:#333;color:#fff;border:1px solid #555;border-radius:4px;font-size:12px}#dlg button:hover{background:#555}#dlg button.ok{background:#27ae60;border-color:#27ae60}#dlg .q{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #222}#dlg .q span{color:#aaa}</style></head><body>
-<div id="app"><div id="top"><span>🟢<b class="v" id="ol">0</b></span><span>👤<b class="v" id="nm">-</b></span><span>Lv<b class="v" id="lv">1</b></span><span>⚔<b class="v" id="at">10</b></span><span>🛡<b class="v" id="df">5</b></span><span id="pt"></span><span style="margin-left:auto;font-size:11px;color:#666">WASD 移动 | 1 普攻 | 2-5 技能 | QE 药水 | F NPC | G 拾取 | Enter 聊天 | T 组队</span></div>
-<div id="main"><div id="wrap"><canvas id="c"></canvas><div id="status">连接中...</div></div>
+/* Compare tooltip */
+#cmp{display:none;position:absolute;background:#1a1a3e;border:2px solid #555;border-radius:6px;padding:10px 14px;z-index:101;pointer-events:none;font-size:11px;line-height:1.6;white-space:nowrap}
+#cmp .cmp-title{color:#f39c12;font-weight:bold;margin-bottom:4px}
+#cmp .cmp-stat{font-family:monospace}#cmp .cmp-up{color:#2ecc71}#cmp .cmp-down{color:#e74c3c}#cmp .cmp-same{color:#888}
+/* Dialog */
+#dlg{display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#1a1a3e;border:2px solid #555;border-radius:8px;padding:16px 20px;min-width:320px;max-width:400px;z-index:100;box-shadow:0 0 20px rgba(0,0,0,.5)}
+#dlg h2{color:#f39c12;font-size:14px;margin-bottom:8px}#dlg p{color:#ccc;font-size:12px;margin:4px 0;line-height:1.4}#dlg button{margin:6px 6px 0 0;padding:5px 14px;cursor:pointer;background:#333;color:#fff;border:1px solid #555;border-radius:4px;font-size:12px}#dlg button:hover{background:#555}#dlg button.ok{background:#27ae60;border-color:#27ae60}#dlg .q{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #222}#dlg .q span{color:#aaa}
+/* Inventory filter tabs */
+.inv-tabs{display:flex;gap:2px;margin-bottom:4px;flex-wrap:wrap}
+.inv-tab{padding:1px 6px;font-size:10px;cursor:pointer;background:#1a1a33;border:1px solid #333;border-radius:2px;color:#888}.inv-tab:hover{color:#fff;background:#2a2a55}.inv-tab.act{color:#2ecc71;border-color:#2ecc71;background:#1a2a33}
+</style></head><body>
+<div id="app"><div id="top"><span>🟢<b class="v" id="ol">0</b></span><span>👤<b class="v" id="nm">-</b></span><span>Lv<b class="v" id="lv">1</b></span><span>⚔<b class="stat-flash v" id="at">10</b></span><span>🛡<b class="stat-flash v" id="df">5</b></span><span id="pt"></span><span style="margin-left:auto;font-size:11px;color:#666">WASD移动 | 1普攻 | 2-5技能 | QE药水 | F对话 | G拾取 | Enter聊天 | T组队</span></div>
+<div id="main"><div id="wrap"><canvas id="c"></canvas><div id="status">连接中...</div><div id="cmp"></div></div>
 <div id="side"><div class="p"><h3>角色</h3>HP<div class="bar hp"><div id="hpb" style="width:100%"></div></div><span id="hpt">100/100</span>
   MP<div class="bar mp"><div id="mpb" style="width:100%"></div></div><span id="mpt">50/50</span>
   XP<div class="bar xp"><div id="xpb" style="width:0%"></div></div><span id="xpt">0/100</span>
   <div style="margin-top:4px;font-size:11px">装备: <span id="eq">—</span></div></div>
-<div class="p"><h3>🎒背包</h3><div id="inv"></div></div>
+<div class="p"><h3>🎒背包<span class="sort-btn" onclick="sortInv()" title="按类型排序">↕整理</span></h3>
+  <div class="inv-tabs" id="itabs"></div>
+  <div id="inv"></div></div>
 <div class="p"><h3>📜任务</h3><div id="qst"></div></div>
 <div class="p"><h3>💬聊天</h3><div id="chat"></div><input id="cin" placeholder="Enter..."></div></div></div>
 <div id="bot"><span style="font-size:10px;color:#777">技能:</span><div class="sk" onclick="k(1)">⚔</div><div class="sk" onclick="k(2)">💥</div><div class="sk" onclick="k(3)">🔥</div><div class="sk" onclick="k(4)">❄</div><div class="sk" onclick="k(5)">💚</div><span style="margin:0 8px;color:#555">|</span><span style="font-size:10px;color:#777">药水:</span><div class="sk" onclick="it(6,6)">🧪</div><div class="sk" onclick="it(7,7)">💧</div></div>
@@ -41,26 +66,165 @@ async function go(uidv){uid=uidv;return new Promise((rv,rj)=>{ws=new WebSocket(W
 async function sd(m,d){if(ws&&ws.readyState===1)ws.send(await P(m,typeof d=='string'?d:JSON.stringify(d)))}
 
 // ====== State ======
-let me={lvl:1,hp:100,mh:100,mp:50,mm:50,xp:0,atk:10,def:5,name:'',x:400,y:300,ready:false};
-let ents={},inv=[],eq={},qst=[],sel=0,keys={},vx=0,vy=0,parties={},cd={},drops={};
+let me={lvl:1,hp:100,mh:100,mp:50,mm:50,xp:0,atk:10,def:5,name:'',x:400,y:300,ready:false,prevAtk:10,prevDef:5};
+let ents={},inv=[],eq={},qst=[],sel=0,keys={},vx=0,vy=0,parties={},cd={},drops={},sortMode='type',invFilter='all';
+let npcQuests={}; // NPC -> quest ID list from 9002
 const IC={1:'🟢',2:'🔵',3:'💀',4:'🟣',5:'🟤'};
-// 物品数据层(与 logic_server ItemDef 同步)
-const IT={1:{n:'铁剑',t:'weapon',i:'🗡',atk:15,def:0,hp:0,mp:0,g:100,d:'+15攻击'},2:{n:'钢剑',t:'weapon',i:'⚔',atk:30,def:0,hp:0,mp:0,g:300,d:'+30攻击'},3:{n:'皮甲',t:'armor',i:'🛡',atk:0,def:10,hp:0,mp:0,g:150,d:'+10防御'},4:{n:'铁甲',t:'armor',i:'🛡',atk:0,def:25,hp:0,mp:0,g:400,d:'+25防御'},5:{n:'力量戒指',t:'accessory',i:'💍',atk:10,def:5,hp:0,mp:0,g:200,d:'+10攻+5防'},6:{n:'生命药水',t:'potion',i:'🧪',atk:0,def:0,hp:50,mp:0,g:50,d:'恢复50HP'},7:{n:'法力药水',t:'potion',i:'💧',atk:0,def:0,hp:0,mp:30,g:50,d:'恢复30MP'},8:{n:'全恢复药水',t:'potion',i:'💎',atk:0,def:0,hp:100,mp:50,g:150,d:'恢复100HP+50MP'},9:{n:'史莱姆凝胶',t:'material',i:'🟢',atk:0,def:0,hp:0,mp:0,g:10,d:'材料'},10:{n:'哥布林耳朵',t:'material',i:'👂',atk:0,def:0,hp:0,mp:0,g:15,d:'材料'}};
-function GI(id){return IT[id]||{n:'物品'+id,i:'📦',t:'unknown',atk:0,def:0,hp:0,mp:0,g:0,d:'?'}}
+
+// 物品数据层 (与 logic_server ItemDef 同步)
+const IT={1:{n:'铁剑',t:'weapon',i:'🗡',atk:15,def:0,hp:0,mp:0,g:100},2:{n:'钢剑',t:'weapon',i:'⚔',atk:30,def:0,hp:0,mp:0,g:300},3:{n:'皮甲',t:'armor',i:'🛡',atk:0,def:10,hp:0,mp:0,g:150},4:{n:'铁甲',t:'armor',i:'🛡',atk:0,def:25,hp:0,mp:0,g:400},5:{n:'力量戒指',t:'accessory',i:'💍',atk:10,def:5,hp:0,mp:0,g:200},6:{n:'生命药水',t:'potion',i:'🧪',atk:0,def:0,hp:50,mp:0,g:50},7:{n:'法力药水',t:'potion',i:'💧',atk:0,def:0,hp:0,mp:30,g:50},8:{n:'全恢复药水',t:'potion',i:'💎',atk:0,def:0,hp:100,mp:50,g:150},9:{n:'史莱姆凝胶',t:'material',i:'🟢',atk:0,def:0,hp:0,mp:0,g:10},10:{n:'哥布林耳朵',t:'material',i:'👂',atk:0,def:0,hp:0,mp:0,g:15}};
+// 任务数据层 (与 logic_server QuestDef 同步)
+const QD={1:{n:'清除史莱姆',d:'消灭5只史莱姆',mob:1,cnt:5,xp:100,rw:6},2:{n:'哥布林威胁',d:'消灭3只哥布林',mob:2,cnt:3,xp:200,rw:7},3:{n:'骷髅清剿',d:'消灭2只骷髅战士',mob:3,cnt:2,xp:350,rw:1},4:{n:'暗影威胁',d:'消灭1只暗影法师',mob:4,cnt:1,xp:500,rw:2},5:{n:'巨人杀手',d:'消灭1只岩石巨人',mob:5,cnt:1,xp:1000,rw:4}};
+function GI(id){return IT[id]||{n:'物品'+id,i:'📦',t:'unknown',atk:0,def:0,hp:0,mp:0,g:0}}
+function GQ(id){return QD[id]||{n:'任务'+id,d:'未知',mob:0,cnt:0,xp:0,rw:0}}
 function EQ_BONUS(){let a=0,d=0;['weapon','armor','accessory'].forEach(s=>{const it=eq[s];if(it&&it.itemId){const di=GI(it.itemId);a+=di.atk;d+=di.def}});return{atk:a,def:d}}
+
+// ====== Particle Effects ======
+function spawnParticles(x,y,color,count,size,life,tag){
+  const wrap=document.getElementById('wrap');
+  for(let i=0;i<count;i++){
+    const p=document.createElement('div');p.className='particle';
+    const angle=Math.random()*Math.PI*2,speed=20+Math.random()*40;
+    p.style.cssText=`left:${x}px;top:${y}px;width:${size}px;height:${size}px;background:${color};
+      border-radius:50%;animation:none;transition:all ${life}ms ease-out;opacity:1;z-index:${tag||4}`;
+    wrap.appendChild(p);
+    requestAnimationFrame(()=>{
+      p.style.transform=`translate(${Math.cos(angle)*speed}px,${Math.sin(angle)*speed}px) scale(0)`;
+      p.style.opacity='0';
+    });
+    setTimeout(()=>p.remove(),life+50);
+  }
+}
+function fxSkill(eid,skillId){
+  const e=ents[eid];if(!e)return;const p=sp(e.x,e.y);
+  const colors={1:'#3498db',2:'#f39c12',3:'#e74c3c',4:'#00bcd4',5:'#2ecc71'};
+  const c=colors[skillId]||'#fff';
+  // 技能爆发环
+  const ring=document.createElement('div');ring.className='particle';
+  ring.style.cssText=`left:${p.x}px;top:${p.y}px;width:30px;height:30px;background:transparent;border:2px solid ${c};border-radius:50%;animation:skillBurst .5s ease-out forwards;z-index:3`;
+  document.getElementById('wrap').appendChild(ring);
+  setTimeout(()=>ring.remove(),500);
+  spawnParticles(p.x,p.y,c,8,4,400,3);
+}
+function fxCrit(eid){
+  const e=ents[eid];if(!e)return;const p=sp(e.x,e.y);
+  spawnParticles(p.x,p.y,'#ff6b00',12,6,500,5);
+}
+function fxKill(eid){
+  const e=ents[eid]||{x:0,y:0};const p=sp(e.x,e.y);
+  spawnParticles(p.x,p.y,'#e74c3c',20,8,700,5);
+  spawnParticles(p.x,p.y,'#f1c40f',10,5,600,5);
+}
+function fxHeal(x,y){
+  spawnParticles(x,y,'#2ecc71',10,5,500,4);
+}
+function fxDrop(x,y){
+  const p=sp(x,y);
+  spawnParticles(p.x,p.y,'#ffd700',6,3,400,4);
+}
+
+function showDmg(eid,dmg,crit){
+  const e=ents[eid];if(!e)return;const p=sp(e.x,e.y);
+  const d=document.createElement('div');d.className='dmg'+(crit?' dmg-crit':'');
+  d.textContent=dmg>0?'-'+dmg:'MISS';
+  d.style.color=(dmg>0&&!crit)?'#ff4444':(dmg>0?'#ff6b00':'#888');
+  d.style.left=p.x+'px';d.style.top=(p.y-30)+'px';
+  document.getElementById('wrap').appendChild(d);
+  setTimeout(()=>d.remove(),800);
+}
+
+// ====== Stat Flash ======
+let flashTimers={};
+function flashStat(id,up){
+  const el=document.getElementById(id);if(!el)return;
+  if(flashTimers[id])clearTimeout(flashTimers[id]);
+  el.classList.remove('stat-up','stat-down');
+  void el.offsetWidth;
+  el.classList.add(up?'stat-up':'stat-down');
+  flashTimers[id]=setTimeout(()=>el.classList.remove('stat-up','stat-down'),400);
+}
+
+// ====== Equipment Compare Tooltip ======
+function showCmp(itemId,slot,ev){
+  const cmp=document.getElementById('cmp');const it=GI(itemId);
+  const cur=eq[slot]&&eq[slot].itemId?GI(eq[slot].itemId):null;
+  if(!cur){cmp.style.display='none';return}
+  let html='<div class="cmp-title">⚔ 装备对比</div>';
+  html+=`<div class="cmp-stat">当前: ${cur.i} ${cur.n}</div>`;
+  if(it.atk!==cur.atk){const d=it.atk-cur.atk;html+=`<div class="cmp-stat">攻击: ${cur.atk} → ${it.atk} <span class="cmp-${d>0?'up':d<0?'down':'same'}">${d>0?'+':''}${d}</span></div>`}
+  if(it.def!==cur.def){const d=it.def-cur.def;html+=`<div class="cmp-stat">防御: ${cur.def} → ${it.def} <span class="cmp-${d>0?'up':d<0?'down':'same'}">${d>0?'+':''}${d}</span></div>`}
+  html+=`<div style="color:#888;font-size:10px">点击装备进行替换</div>`;
+  cmp.innerHTML=html;cmp.style.display='block';
+  const rect=ev.target.getBoundingClientRect();
+  cmp.style.left=(rect.right+8)+'px';cmp.style.top=(rect.top-20)+'px';
+  // keep in bounds
+  const cr=cmp.getBoundingClientRect();
+  if(cr.right>window.innerWidth-280)cmp.style.left=(rect.left-cr.width-8)+'px';
+}
+function hideCmp(){document.getElementById('cmp').style.display='none'}
+
+// ====== Inventory Sort ======
+function sortInv(){
+  const modes=['type','value','name'];sortMode=modes[(modes.indexOf(sortMode)+1)%modes];
+  document.querySelector('.sort-btn').textContent='↕整理('+{type:'类型',value:'价值',name:'名称'}[sortMode]+')';
+  R();
+}
+function getInvSorted(){
+  const im={};inv.forEach(({itemId,count})=>{const c=count||1;im[itemId]=(im[itemId]||0)+c});
+  let entries=Object.entries(im).map(([id,c])=>[parseInt(id),c,GI(parseInt(id))]);
+  if(sortMode==='type'){
+    const order={weapon:0,armor:1,accessory:2,potion:3,material:4};
+    entries.sort((a,b)=>((order[a[2].t]||9)-(order[b[2].t]||9))||(b[2].g-a[2].g));
+  }else if(sortMode==='value'){
+    entries.sort((a,b)=>b[2].g-a[2].g);
+  }else{
+    entries.sort((a,b)=>a[2].n.localeCompare(b[2].n));
+  }
+  return entries;
+}
 
 // ====== Message Dispatch ======
 async function onD(data){let off=0;while(off+H<=data.length){if(data[off]!==M[0]||data[off+1]!==M[1]){off++;continue}const v=new DataView(data.buffer,data.byteOffset,data.byteLength);const bl=v.getUint16(off+6,false);if(off+H+bl>data.length)break;const mid=v.getUint16(off+4,false);try{const p=await D(data.subarray(off+H,off+H+bl));const j=JSON.parse(new TextDecoder().decode(p));h(mid,j)}catch(e){}off+=H+bl}}
 function h(m,b){switch(m){
-case 5001:me.hp=b.hp??me.hp;me.mh=b.maxHp??me.mh;me.mp=b.mp??me.mp;me.mm=b.maxMp??me.mm;if(b.level){me.lvl=b.level;me.xp=b.exp||0;me.atk=b.atk||me.atk;me.def=b.def||me.def;me.name=b.name||me.name;me.x=b.x||me.x;me.y=b.y||me.y;if(!me.ready){me.ready=true;S("就绪")}}R();break;
+case 5001:{
+  const oldAtk=me.atk,oldDef=me.def;
+  me.hp=b.hp??me.hp;me.mh=b.maxHp??me.mh;me.mp=b.mp??me.mp;me.mm=b.maxMp??me.mm;
+  if(b.level){me.lvl=b.level;me.xp=b.exp||0;me.atk=b.atk||me.atk;me.def=b.def||me.def;me.name=b.name||me.name;me.x=b.x||me.x;me.y=b.y||me.y;if(!me.ready){me.ready=true;S("就绪")}}
+  // 装备实时反映战斗力 — 属性变化时闪烁
+  if(b.atk!==undefined&&b.atk!==oldAtk){me.atk=b.atk;flashStat('at',b.atk>oldAtk)}
+  if(b.def!==undefined&&b.def!==oldDef){me.def=b.def;flashStat('df',b.def>oldDef)}
+  if(b.healed){fxHeal(cv.width/2,cv.height/2)}
+  R();break;
+}
 case 5002:if(b.gained!=null){if(b.exp!=null)me.xp=b.exp;if(b.level&&b.level>me.lvl){me.lvl=b.level;L('⭐','升到 '+me.lvl+'级!')}R()}else if(b.mp!=null){me.mp=b.mp;me.mm=b.maxMp||me.mm;R()}break;
 case 5003:inv=b.items||[];R();break;
 case 5004:eq=b;R();break;
 case 5005:qst=b.quests||[];R();break;
 case 5006:{if(b.name)L('💬','NPC: '+b.name+' — '+(b.dialog||''));break}
-case 9002:{if(b.npcs)b.npcs.forEach(s=>{const j=JSON.parse(s);ents[j.id]={t:'npc',name:j.name,x:j.x,y:j.y,tx:j.x,ty:j.y,npcType:j.npcType,dialog:j.dialog}});if(b.mobs)b.mobs.forEach(s=>{const j=JSON.parse(s);ents[j.entityId]={t:'mob',name:j.name,x:j.x,y:j.y,tx:j.x,ty:j.y,hp:j.hp,mh:j.maxHp,level:j.level,icon:IC[j.defId]||'👹'}});L('📥','世界加载 '+Object.keys(ents).length+' 实体');break}
-case 6001:{if(b.targetUid&&ents[b.targetUid]){const e=ents[b.targetUid];const dmg=b.damage||0;e.hp=Math.max(0,(e.hp||100)-dmg);showDmg(b.targetUid,dmg);if(e.hp<=0){e.hp=0;L('⚔','击败 '+e.name+'!');delete ents[b.targetUid];if(sel===b.targetUid)sel=0}}if(b.playerHp!==undefined){me.hp=b.playerHp;R()}if(b.expGained){me.xp+=b.expGained;R()}break}
-case 6003:{if(b.drops)b.drops.forEach(s=>{try{const d=typeof s==='string'?JSON.parse(s):s;drops[d.dropId]={dropId:d.dropId,itemId:d.itemId,count:d.count||1,x:d.x,y:d.y};L('💠','掉落: '+GI(d.itemId).n+' (按G拾取)')}catch(x){}});if(b.exp)me.xp+=b.exp;break}
+case 9002:{
+  if(b.npcs)b.npcs.forEach(s=>{const j=JSON.parse(s);ents[j.id]={t:'npc',name:j.name,x:j.x,y:j.y,tx:j.x,ty:j.y,npcType:j.type||j.npcType,dialog:j.dialog};if(j.quests)npcQuests[j.id]=j.quests});
+  if(b.mobs)b.mobs.forEach(s=>{const j=JSON.parse(s);ents[j.entityId]={t:'mob',name:j.name,x:j.x,y:j.y,tx:j.x,ty:j.y,hp:j.hp,mh:j.maxHp,level:j.level,icon:IC[j.defId]||'👹'}});
+  L('📥','世界加载 '+Object.keys(ents).length+' 实体');break;
+}
+case 6001:{
+  if(b.targetUid&&ents[b.targetUid]){
+    const e=ents[b.targetUid];const dmg=b.dmg||b.damage||0;e.hp=Math.max(0,(e.hp||100)-dmg);
+    showDmg(b.targetUid,dmg,b.crit);
+    if(b.crit)fxCrit(b.targetUid);
+    // 技能粒子特效
+    const sid=b.skillId||1;if(sid>1)fxSkill(b.targetUid,sid);
+    if(e.hp<=0){e.hp=0;L('⚔','击败 '+e.name+'!');fxKill(b.targetUid);delete ents[b.targetUid];if(sel===b.targetUid)sel=0}
+  }
+  if(b.playerHp!==undefined){me.hp=b.playerHp;R()}
+  if(b.expGained){me.xp+=b.expGained;R()}
+  // 治疗术无目标时的治疗粒子
+  if(b.swing&&(b.skillId===5))fxHeal(cv.width/2,cv.height/2);
+  break;
+}
+case 6003:{
+  if(b.drops)b.drops.forEach(s=>{try{const d=typeof s==='string'?JSON.parse(s):s;drops[d.dropId]={dropId:d.dropId,itemId:d.itemId,count:d.count||1,x:d.x,y:d.y};fxDrop(d.x,d.y);L('💠','掉落: '+GI(d.itemId).n+' (按G拾取)')}catch(x){}});
+  if(b.exp)me.xp+=b.exp;break;
+}
 case 7002:{const tp=b.type||'';if(tp==='party_invite'){L('🤝',b.fromName+' 邀请你组队! 按 T 接受')}else if(tp==='party_join'){parties[b.uid]=b.name;L('🤝',b.name+' 加入队伍');up()}else if(tp==='party_leave'){delete parties[b.uid];L('🤝',b.name+' 离开队伍');up()}else L(b.fromName||('P'+b.from),b.text||'');break}
 case 8001:if(b.uid&&ents[b.uid]){ents[b.uid].tx=b.x;ents[b.uid].ty=b.y}break;
 case 8002:if(b.uid!==uid){ents[b.uid]={t:'player',name:b.name||'P'+b.uid,x:b.x||400,y:b.y||300,tx:b.x||400,ty:b.y||300,hp:100,mh:100};L('📥',(b.name||'P'+b.uid)+' 进入')}break;
@@ -68,7 +232,6 @@ case 8003:if(b.uid&&ents[b.uid]){L('📤',ents[b.uid].name+' 离开');delete ent
 case 8004:if(b.entityId&&ents[b.entityId]){ents[b.entityId].tx=b.x;ents[b.entityId].ty=b.y;ents[b.entityId].hp=b.hp;ents[b.entityId].mh=b.maxHp}break;
 case 9001:(b.players||[]).forEach(p=>{if(p.uid!==uid)ents[p.uid]={t:'player',name:p.name||'P'+p.uid,x:p.x||400,y:p.y||300,tx:p.x||400,ty:p.y||300,hp:100,mh:100}});break;
 }}function L(w,t){const c=document.getElementById('chat');c.innerHTML+=`<div><b style="color:#3498db">${w}</b>: ${t}</div>`;c.scrollTop=c.scrollHeight}
-function showDmg(eid,dmg){const e=ents[eid];if(!e)return;const p=sp(e.x,e.y);const d=document.createElement('div');d.className='dmg';d.textContent=dmg>0?'-'+dmg:'MISS';d.style.color=dmg>0?'#ff4444':'#888';d.style.left=p.x+'px';d.style.top=(p.y-30)+'px';document.getElementById('wrap').appendChild(d);setTimeout(()=>d.remove(),800)}
 
 // ====== HUD ======
 function R(){
@@ -83,21 +246,29 @@ function R(){
   // 装备面板(3槽)
   const eqHTML=[];
   ['weapon','armor','accessory'].forEach(s=>{
-    const item=eq[s],d=item&&item.itemId?GI(item.itemId):{n:'空',i:s==='weapon'?'⚔':s==='armor'?'🛡':'💍',t:'empty',atk:0,def:0,hp:0,mp:0,g:0,d:''};
+    const item=eq[s],d=item&&item.itemId?GI(item.itemId):{n:'空',i:s==='weapon'?'⚔':s==='armor'?'🛡':'💍',t:'empty',atk:0,def:0,hp:0,mp:0,g:0};
     const plus=item&&item.itemId?'style="color:#2ecc71"':'style="color:#555"';
-    eqHTML.push('<span '+plus+' title="'+s+': '+(item&&item.itemId?d.n+' '+d.d:'空')+'">'+d.i+'</span>');
+    eqHTML.push('<span '+plus+' title="'+s+': '+(item&&item.itemId?d.n+' ATK+'+d.atk+' DEF+'+d.def:'空')+'">'+d.i+'</span>');
   });
   document.getElementById('eq').innerHTML=eqHTML.join(' ');
-  // 背包
-  const im={};inv.forEach(({itemId,count})=>{const c=count||1;im[itemId]=(im[itemId]||0)+c});
-  document.getElementById('inv').innerHTML=Object.entries(im).map(([id,c])=>{
-    const d=GI(parseInt(id)),acts=[];
-    if(d.hp||d.mp)acts.push('<span class="abtn" onclick="us('+id+')" title="使用 '+d.n+'">使用</span>');
-    if(d.t==='weapon'||d.t==='armor'||d.t==='accessory')acts.push('<span class="abtn" onclick="eqp('+id+',\''+d.t+'\')" title="装备 '+d.n+'">装备</span>');
-    return '<div class="item" title="'+d.n+': '+d.d+'&#10;价值: '+d.g+' 金币"><span>'+d.i+'</span> '+d.n+' <b>x'+c+'</b><span class="a">'+acts.join('')+'</span></div>'}).join('')||'<span style="color:#666;font-size:12px">空空如也 — 去打怪吧!</span>';
-  // 任务
+  // 背包 (带排序和过滤)
+  const entries=getInvSorted();
+  const filtered=invFilter==='all'?entries:entries.filter(([,,d])=>d.t===invFilter);
+  // 过滤标签
+  const types=['all','weapon','armor','accessory','potion','material'];
+  document.getElementById('itabs').innerHTML=types.map(t=>'<span class="inv-tab'+(invFilter===t?' act':'')+'" onclick="invFilter=\''+t+'\';R()">'+{all:'全部',weapon:'🗡武器',armor:'🛡护甲',accessory:'💍饰品',potion:'🧪药水',material:'📦材料'}[t]+'</span>').join('');
+  document.getElementById('inv').innerHTML=entries.length===0?'<span style="color:#666;font-size:12px">空空如也 — 去打怪吧!</span>':
+    filtered.map(([id,c,d])=>{
+      const acts=[];
+      if(d.hp||d.mp)acts.push('<span class="abtn" onclick="us('+id+')" title="使用 '+d.n+'">使用</span>');
+      if(d.t==='weapon'||d.t==='armor'||d.t==='accessory'){
+        const slot=d.t==='weapon'?'weapon':d.t==='armor'?'armor':'accessory';
+        acts.push('<span class="abtn eqp-btn" onclick="eqp('+id+',\''+d.t+'\')" onmouseenter="showCmp('+id+',\''+slot+'\',event)" onmouseleave="hideCmp()" title="装备 '+d.n+'">装备</span>');
+      }
+      return '<div class="item" title="'+d.n+'&#10;ATK+'+d.atk+' DEF+'+d.def+'&#10;价值: '+d.g+' 金币"><span>'+d.i+'</span> '+d.n+' <b>x'+c+'</b><span class="a">'+acts.join('')+'</span></div>'}).join('')||'<span style="color:#666;font-size:12px">该分类无物品</span>';
+  // 任务 — 使用服务端下发的数据
   document.getElementById('qst').innerHTML=qst.map(q=>{
-    const d=q.name||('任务'+q.questId),t=q.target||1,p=q.progress||0;
+    const qd=GQ(q.questId),d=qd.n||('任务'+q.questId),t=q.target||qd.cnt||1,p=q.progress||0;
     return '<div style="font-size:11px;padding:2px 0">📜 '+d+' ('+p+'/'+t+')<div class="bar"><div style="width:'+Math.min(p/t*100,100)+'%;background:#27ae60"></div></div></div>'}).join('')||'<span style="color:#666;font-size:12px">暂无任务 — 找NPC按F</span>';
 }
 function up(){document.getElementById('pt').textContent=Object.keys(parties).length>0?'🤝队伍:'+Object.values(parties).join(', '):''}
@@ -111,7 +282,7 @@ function dr(){
   const g=50;cx.strokeStyle='#141430';cx.lineWidth=1;
   for(let x=(-vx%g+g)%g;x<cv.width;x+=g){cx.beginPath();cx.moveTo(x,0);cx.lineTo(x,cv.height);cx.stroke()}
   for(let y=(vy%g+g)%g;y<cv.height;y+=g){cx.beginPath();cx.moveTo(0,y);cx.lineTo(cv.width,y);cx.stroke()}
-  // Entities — lerp toward target
+  // Entities
   Object.entries(ents).forEach(([id,e])=>{e.x=(e.tx!=null?e.x+(e.tx-e.x)*.25:e.x);e.y=(e.ty!=null?e.y+(e.ty-e.y)*.25:e.y);const p=sp(e.x,e.y);if(p.x<-60||p.x>cv.width+60||p.y<-60||p.y>cv.height+60)return;
     if(e.t==='mob'){cx.fillStyle='#e74c3c';const s=14;cx.beginPath();cx.arc(p.x,p.y,s,0,Math.PI*2);cx.fill();cx.fillStyle='#fff';cx.font='10px sans-serif';cx.textAlign='center';cx.fillText(e.icon||'👹',p.x,p.y+3);
       if(e.mh>0){cx.fillStyle='#333';cx.fillRect(p.x-18,p.y-s-10,36,5);cx.fillStyle='#e74c3c';cx.fillRect(p.x-18,p.y-s-10,36*((e.hp||100)/e.mh),5)}cx.fillText(e.name,p.x,p.y-s-16)}
@@ -129,7 +300,7 @@ function dr(){
 
 // ====== Input ======
 document.addEventListener('keydown',e=>{const ck=e.code,ky=e.key.toLowerCase();
-  if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Digit1','Digit2','Digit3','Digit4','Digit5','KeyQ','KeyE','KeyF','KeyG','KeyT'].includes(c))e.preventDefault();
+  if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Digit1','Digit2','Digit3','Digit4','Digit5','KeyQ','KeyE','KeyF','KeyG','KeyT'].includes(ck))e.preventDefault();
   keys[ky]=true;
   if(ky==='enter'&&document.activeElement!==document.getElementById('cin')){document.getElementById('cin').focus();e.preventDefault()}
   if(ky==='1'||c==='Digit1')k(1);else if(ky==='2'||c==='Digit2')k(2);
@@ -147,20 +318,32 @@ function nm(){let b=null,bd=1e9;Object.entries(ents).forEach(([id,e])=>{if(e.t==
 async function k(sid){if(inDlg)return;if(cd[sid]&&cd[sid]>Date.now()){L('⏳','技能冷却中 ('+Math.ceil((cd[sid]-Date.now())/1000)+'s)');return}const t=sid===1?nm():sel;if(!t||!ents[t]){L('⚠',sid===1?'附近没有怪物':'没有选中目标 — 先按1锁定怪物再按2-5');return}sel=t;cd[sid]=Date.now()+(sid===1?800:2000);L('⚔','攻击 '+ents[t].name+'!');await sd(sid===1?1001:1002,sid===1?{skillId:1,targetUid:t}:{skillId:sid,targetUid:t})}
 async function it(a,b){const h=inv.find(i=>i.itemId===a||i.itemId===b);if(h)await sd(1008,{itemId:h.itemId});else L("⚠","背包中没有该药水!")}
 async function us(id){await sd(1008,{itemId:id})}
-async function eqp(id,type){const iid=parseInt(id);if(isNaN(iid)){L("⚠","无效物品ID");return}const s=type==='weapon'?'weapon':type==='armor'?'armor':'accessory';await sd(1004,{itemId:iid,slot:s});L('⚔','装备 '+GI(parseInt(id)).n+' 到 '+s+'槽')}
-let inDlg=false;async function talk(){let b=null,bd=1e9;Object.entries(ents).forEach(([id,e])=>{if(e.t==='npc'){const d=Math.hypot(e.x-me.x,e.y-me.y);if(d<bd){bd=d;b={id:Number(id),e}}}});
-if(!b||bd>150){L('💬','附近没有NPC');return}
-const e=b.e,dlg=document.getElementById('dlg');
-document.getElementById('dt').textContent=e.name;
-document.getElementById('dc').textContent=e.dialog||'你好，冒险者！';
-document.getElementById('da').innerHTML='<button onclick="cls()">关闭</button>';
-// Show available quests
-const AQ=[{id:1,name:'史莱姆清理',desc:'消灭3只史莱姆'},{id:2,name:'哥布林威胁',desc:'消灭3只哥布林'}];
-document.getElementById('dq').innerHTML=AQ.map(q=>{
-  const has=qst.find(s=>s.questId===q.id);
-  const done=has&&has.progress>=has.target;
-  return `<div class="q"><span>📜 ${q.name} — ${q.desc}</span>${has?(done?`<button class="ok" onclick="sd(1006,{questId:${q.id}});cls()">提交</button>`:`<span style="color:#27ae60">${has.progress}/${has.target}</span>`):`<button onclick="sd(1005,{questId:${q.id}});L('📜','接取任务: ${q.name}');cls()">接取</button>`}</div>`}).join('');
-dlg.style.display='block'}
+async function eqp(id,type){const iid=parseInt(id);if(isNaN(iid)){L("⚠","无效物品ID");return}const s=type==='weapon'?'weapon':type==='armor'?'armor':'accessory';hideCmp();await sd(1004,{itemId:iid,slot:s});L('⚔','装备 '+GI(parseInt(id)).n+' 到 '+s+'槽')}
+let inDlg=false;
+async function talk(){
+  let b=null,bd=1e9;Object.entries(ents).forEach(([id,e])=>{if(e.t==='npc'){const d=Math.hypot(e.x-me.x,e.y-me.y);if(d<bd){bd=d;b={id:Number(id),e}}}});
+  if(!b||bd>150){L('💬','附近没有NPC');return}
+  const e=b.e,dlg=document.getElementById('dlg'),nid=b.id;
+  document.getElementById('dt').textContent=e.name;
+  document.getElementById('dc').textContent=e.dialog||'你好，冒险者！';
+  document.getElementById('da').innerHTML='<button onclick="cls()">关闭</button>';
+  // 使用服务端下发的 NPC 任务数据 (9002 中 npcQuests)
+  const questIds=npcQuests[nid]||[];
+  let html='';
+  if(e.npcType==='quest_giver'||questIds.length>0){
+    questIds.forEach(qid=>{
+      const qd=GQ(qid),has=qst.find(s=>s.questId===qid);
+      const done=has&&has.progress>=has.target;
+      html+=`<div class="q"><span>📜 ${qd.n} — ${qd.d}</span>${has?(done?`<button class="ok" onclick="sd(1006,{questId:${qid}});cls()">提交</button>`:`<span style="color:#27ae60">${has.progress}/${qd.cnt}</span>`):`<button onclick="sd(1005,{questId:${qid}});L('📜','接取任务: ${qd.n}');cls()">接取</button>`}</div>`;
+    });
+  }else if(e.npcType==='merchant'){
+    html='<div class="q"><span>🏪 商店</span><span style="color:#888">(开发中)</span></div>';
+  }else if(e.npcType==='healer'){
+    html='<div class="q"><span>💚 恢复全部生命和法力</span><span style="color:#2ecc71">已恢复!</span></div>';
+  }
+  document.getElementById('dq').innerHTML=html||'<div style="color:#888">该NPC暂无功能</div>';
+  dlg.style.display='block';inDlg=true;
+}
 function cls(){document.getElementById('dlg').style.display='none';inDlg=false}
 async function pick(){let b=null,bd=1e9;Object.values(drops).forEach(d=>{const dist=Math.hypot(d.x-me.x,d.y-me.y);if(dist<bd&&dist<80){bd=dist;b=d}});if(b){L('💎','拾取 '+GI(b.itemId).n+'!');await sd(1003,{dropId:b.dropId});delete drops[b.dropId]}else L('💎','附近没有掉落物 (按G)')}
 async function acpt(){await sd(2003,{})}
@@ -171,7 +354,7 @@ async function main(){
   await new Promise(r=>setTimeout(r,2500));S('加载...');dr();
   setInterval(async()=>{if(inDlg)return;let dx=0,dy=0;if(keys['w']||keys['arrowup'])dy+=6;if(keys['s']||keys['arrowdown'])dy-=6;if(keys['a']||keys['arrowleft'])dx-=6;if(keys['d']||keys['arrowright'])dx+=6;if(dx||dy){me.x=Math.max(0,Math.min(1600,me.x+dx));me.y=Math.max(0,Math.min(1200,me.y+dy));sd(3001,{x:me.x,y:me.y,dir:0})}},100);
   setInterval(()=>sd(4001,{}),800);
-  L('🎮','WASD移动 1普攻 2-5技能 QE药水 F对话 G拾取 T接受组队 Enter聊天');
+  L('🎮','v0.4 | WASD移动 1普攻 2-5技能 QE药水 F对话 G拾取 T接受组队 Enter聊天');
   S('就绪');
 }main().catch(e=>{S('失败:'+e.message);L('❌',e.message)});
 </script></body></html>

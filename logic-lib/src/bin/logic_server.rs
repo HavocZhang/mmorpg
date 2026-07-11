@@ -547,15 +547,20 @@ impl NpcEntity {
     }
 
     fn to_json(&self) -> String {
-        serde_json::json!({
+        let mut json = serde_json::json!({
             "id": self.id,
             "name": self.name,
             "x": self.x,
             "y": self.y,
             "type": self.npc_type,
             "dialog": self.dialog,
-        })
-        .to_string()
+        });
+        // quest_giver 类型的 NPC 附带可用任务 ID 列表
+        if self.npc_type == "quest_giver" {
+            let quest_ids: Vec<u32> = QUEST_DEFS.iter().map(|q| q.id).collect();
+            json["quests"] = serde_json::json!(quest_ids);
+        }
+        json.to_string()
     }
 }
 
