@@ -6,15 +6,22 @@
 [![Security](https://img.shields.io/badge/audit-0%20vulns-brightgreen.svg)](#安全审计)
 [![Throughput](https://img.shields.io/badge/throughput-80K%20pps-blue.svg)](#吞吐压测)
 [![Stability](https://img.shields.io/badge/stability-72h%20running-brightgreen.svg)](#稳定性压测)
+[![Version](https://img.shields.io/badge/version-v0.6.0-green.svg)](ROADMAP.md)
 
-**Rust 实现的高性能、有状态的 MMO 游戏接入网关集群**，支持百万级并发在线、多节点集群跨网关通信、gRPC 逻辑服路由。
+**Rust 实现的高性能、有状态的 MMO 游戏接入网关集群**，支持百万级并发在线、多节点集群跨网关通信、gRPC 逻辑服路由，自带完整 MMORPG 游戏逻辑。
+
+**当前版本**: v0.6.0 — 满功能 MMO（战斗/交易/地图/公会/PvP/副本/聊天/装备/任务/反外挂）
+
+> 🎮 打开 `web-client/game.html` 即可体验完整的 MMORPG 游戏！
 
 ---
 
 ## 目录
 
 - [架构概览](#架构概览)
+- [游戏功能](#游戏功能)
 - [快速开始](#快速开始)
+- [生产部署](#生产部署)
 - [测试报告](#测试报告)
 - [性能指标](#性能指标)
 - [集群验证](#集群验证)
@@ -27,7 +34,7 @@
 
 ```
                     ┌─────────────┐
-                    │   Client    │  (WebSocket / TCP)
+                    │   Client    │  (WebSocket :7890 / TCP :7888)
                     └──────┬──────┘
                            │
               ┌────────────┼────────────┐
@@ -42,14 +49,25 @@
                            │  Redis PubSub (跨网关消息)
                    ┌───────▼───────┐
                    │    Redis      │  (路由索引 + 广播)
+                   │   Sentinel    │  (1主2从3哨兵)
                    └───────┬───────┘
                            │
-                   ┌───────▼───────┐
-                   │ Logic Server  │  (gRPC 游戏逻辑)
-                   └───────────────┘
+              ┌────────────┼────────────┐
+              │            │            │
+         ┌────▼────┐  ┌────▼────┐  ┌────▼────┐
+         │ Logic   │  │ Scene   │  │ Combat  │
+         │ Server  │  │ Server  │  │ Server  │  (gRPC 游戏逻辑)
+         └─────────┘  └─────────┘  └─────────┘
+                           │
+              ┌────────────┼────────────┐
+              │                         │
+         ┌────▼────┐              ┌─────▼─────┐
+         │PostgreSQL│              │  SQLite   │  (降级)
+         │ (主)     │              │ (离线)    │
+         └─────────┘              └───────────┘
 ```
 
-**13 个核心模块**：
+**14 个核心模块**：
 
 | 模块 | 职责 | 关键技术 |
 |------|------|----------|
@@ -57,15 +75,39 @@
 | `foundation` | 雪花ID生成器 | 无锁 AtomicU64 |
 | `crypto` | AES-256-GCM 加密 | 12B nonce + 16B tag |
 | `protocol` | 16B 定长包头 + CRC32 | 变长包体流式解码 |
-| `network` | TCP 握手 + ReadLoop/WriteLoop | Tokio TCP split |
+| `network` | TCP/WS 接入 + 握手里程碑 | Tokio TCP split + WsAdapter |
 | `session` | 会话管理（顶号/心跳） | DashMap 双映射 |
-| `io_engine` | 小包合并 + 优先级队列 | 16ms 合并窗口 |
+| `io_engine` | 小包合并 + 优先级队列 | 16ms 合并窗口, 泛型 ReadLoop/WriteLoop |
 | `grpc_router` | gRPC 连接池 + 负载均衡 | tonic, 一致性哈希 |
 | `cluster` | Redis 路由索引 + PubSub | 跨节点消息精准投递 |
 | `security` | IP 黑名单 + 限流 + 审计 | 滑动窗口 + IP 前缀 |
 | `admin` | HTTP 监控 + Prometheus | actix-web, 优雅停机 |
-| `chat` | 聊天系统 | broadcast 广播 |
-| `combat/scene` | 战斗/场景 | logic-lib 独立 crate |
+| `chat` | 聊天系统 | broadcast 广播 + 私聊/公会频道 |
+| `combat/scene` | 战斗/场景/AOI/反外挂 | logic-lib 独立 crate |
+| `ws_listener` | WebSocket 原生支持 | WsAdapter AsyncRead/AsyncWrite |
+
+---
+## 游戏功能
+
+Logic Server 实现了完整 MMORPG 游戏玩法：
+
+| 系统 | 功能 | 版本 |
+|------|------|------|
+| 战斗 | 5 种怪物 + 5 技能 + 暴击 + 粒子特效 | v0.3 |
+| 装备 | 5 种装备 + 穿戴/卸下 + 属性加成 + 对比 | v0.3 |
+| 背包 | 10 种物品 + 分类排序 + 使用/丢弃 | v0.4 |
+| 任务 | 5 个任务 + 接取/追踪/完成 + 奖励 | v0.4 |
+| NPC | 5 NPC + 对话/选项 + 商人/任务/治疗 | v0.4 |
+| 地图 | 4 地图 + 6 传送门 + 专属怪物 | v0.6 |
+| 经济 | 商店(8商品) + 购买/卖出 + 金币 | v0.6 |
+| 副本 | 3 Boss + 祭坛召唤 + 增强掉落 | v0.6 |
+| 公会 | 创建/加入/离开 + 公会频道 | v0.6 |
+| PvP | 1v1 决斗发起/接受 | v0.6 |
+| 私聊 | `/w` 命令 + 精准投递 | v0.6 |
+| 组队 | 邀请/加入/离开 + 队伍聊天 | v0.4 |
+| 职业 | 战/法/弓 3 职业 + 9 天赋 + 属性加成 | v0.6 |
+| 排行 | 等级榜/金币榜 Top20 | v0.6 |
+| 反外挂 | 速度/频率/背包校验 + 强制拉回 | v0.5 |
 
 ---
 
@@ -89,12 +131,15 @@ cargo build --release
 # 3. 启动逻辑服
 cd logic-lib && cargo run --release --bin logic-server &
 
-# 4. 启动网关
-cp .env.dev .env  # 或直接用 .env.dev
+# 4. 启动网关 (TCP :7888 + WS :7890)
+cp .env.dev .env
 cargo run --release
+
+# 5. 打开网页客户端玩
+open web-client/game.html
 ```
 
-### 单节点 + 集群模式
+### 单节点 + 集群模式 + 网页客户端
 
 ```bash
 # 单节点（默认）
@@ -104,6 +149,30 @@ cargo run --release
 GATE_TCP_PORT=7889 GATE_HTTP_PORT=9091 GATE_NODE_ID=2 \
 GATE_NODE_NAME=gate-dev-02 \
 ./target/release/rust-mmo-gate.exe
+
+# 打开网页客户端
+# 直接在浏览器打开 web-client/game.html
+# 或使用任意 HTTP 服务器:
+cd web-client && python -m http.server 8080
+```
+
+---
+## 生产部署
+
+使用 Docker Compose 一键部署完整生产环境：
+
+```bash
+# 生产环境部署（3 网关 + Redis Sentinel + PG + Nginx + 监控）
+cp .env.prod.example .env.prod  # 编辑密钥
+docker compose -f docker-compose.prod.yml up -d
+
+# 服务列表：
+# - rust-mmo-gate ×3 (TCP 7888-7890, WS 7890-7892)
+# - Redis Sentinel: 1 主 + 2 从 + 3 哨兵
+# - PostgreSQL 16
+# - Nginx (L4 TCP 负载均衡 + L7 WebSocket 代理)
+# - Prometheus + Grafana (端口 3000)
+# - Alertmanager (企业微信/钉钉告警)
 ```
 
 ---
@@ -261,28 +330,38 @@ Player-A (Gate-1, uid=20001)
 
 ```
 rust-mmo-gate/
-├── src/                          # 网关核心代码
-│   ├── main.rs                   # 启动入口
+├── src/                          # 网关核心代码 (14 模块)
+│   ├── main.rs                   # 启动入口 (TCP + WS 双监听)
 │   ├── config/                   # 配置管理
 │   ├── foundation/               # 雪花 ID 生成器
 │   ├── crypto/                   # AES-256-GCM 加密
 │   ├── protocol/                 # 16B 包头 + CRC32
-│   ├── network/                  # TCP 握手 + ReadLoop/WriteLoop
+│   ├── network/                  # TCP/WS 接入 + 握手里程碑
+│   │   ├── handshake.rs          # 握手里程碑 (TCP/WS 共用)
+│   │   ├── tcp_listener.rs       # TCP 监听
+│   │   └── ws_listener.rs        # WebSocket 原生支持
 │   ├── session/                  # 会话管理（DashMap 双映射）
-│   ├── io_engine/                # 小包合并 + 优先级队列
+│   ├── io_engine/                # 小包合并 + 优先级队列 (泛型)
 │   ├── grpc_router/              # gRPC 连接池 + 负载均衡
 │   ├── cluster/                  # Redis 路由索引 + PubSub
-│   ├── security/                 # IP 黑名单 + 限流
+│   ├── security/                 # IP 黑名单 + 限流 + 反外挂
 │   └── admin/                    # HTTP 监控 + Prometheus
 │
-├── logic-lib/                    # 游戏逻辑独立 crate
-│   └── src/bin/
-│       ├── logic_server.rs       # 主逻辑服
-│       ├── scene_server.rs       # 场景服 (AOI)
-│       ├── chat_server.rs        # 聊天服
-│       └── combat_server.rs      # 战斗服
+├── logic-lib/                    # 游戏逻辑独立 crate (满功能 MMO)
+│   └── src/
+│       ├── db.rs                 # 数据库 (PG + SQLite 降级)
+│       ├── party.rs              # 组队系统
+│       └── bin/
+│           ├── logic_server.rs   # 主逻辑服 (1600+ 行)
+│           ├── scene_server.rs   # 场景服 (AOI)
+│           ├── chat_server.rs    # 聊天服
+│           └── combat_server.rs  # 战斗服
 │
-├── tests/                        # 测试套件
+├── deploy/                       # 生产部署配置
+│   ├── nginx/nginx-prod.conf     # Nginx L4 TCP + L7 WS
+│   └── alertmanager/             # Alertmanager + Webhook 中继
+│
+├── tests/                        # 测试套件 (440+ 用例)
 │   ├── tdd_unit/                 # 15 个 TDD 单元测试文件
 │   ├── tdd_concurrent/           # 7 个并发安全测试
 │   ├── tdd_fuzz/                 # 模糊测试
@@ -290,15 +369,16 @@ rust-mmo-gate/
 │   ├── bdd/                      # BDD cucumber 步骤定义
 │   └── bdd_feature/              # Gherkin .feature 场景
 │
-├── web-client/                   # Node.js 压测客户端
+├── web-client/                   # 网页游戏客户端 + 压测工具
+│   ├── game.html                 # 单文件 MMORPG 客户端
 │   ├── test_stability_v2.js      # 稳定性压测
-│   ├── throughput_80k.js         # 吞吐压测
 │   └── test_cluster_cross_gate.js# 集群跨网关测试
 │
-├── ci.sh                         # CI 流水线脚本
+├── docker-compose.prod.yml       # 生产环境 Docker Compose
+├── .github/workflows/ci.yml      # GitHub Actions CI/CD
 ├── Dockerfile                    # Docker 镜像构建
-├── .env.dev                      # 开发环境配置
-├── .env.node2                    # 节点 2 配置（集群）
+├── ROADMAP.md                    # 完整版本路线图
+├── PROTOCOL.md                   # 游戏协议文档 (18 条消息)
 ├── Cargo.toml                    # Rust 依赖
 └── rust-toolchain.toml           # Rust 1.95.0
 ```
@@ -341,6 +421,9 @@ bash ci.sh --full
 
 **检查项**：cargo check → fmt → clippy -D warnings → cargo test --lib → 15 TDD 套件 → (可选: audit / bench / BDD)
 
+另外包含 GitHub Actions CI/CD 流水线 (`.github/workflows/ci.yml`)：
+5 阶段自动运行：lint（fmt + clippy）→ test → audit → docker build → release
+
 ---
 
 ## 常用命令
@@ -375,13 +458,31 @@ cargo clippy --all-targets -- -D warnings
 | 异步运行时 | Tokio multi-thread |
 | 并发 | DashMap + parking_lot + crossbeam |
 | 加密 | AES-256-GCM (aes-gcm crate) |
-| 协议 | 16B 定长包头 + CRC32 + 变长包体 |
+| 协议 | 16B 定长包头 + CRC32 + 变长包体 (TCP/WS) |
 | 序列化 | prost (Protobuf) + serde_json + rmp-serde |
 | gRPC | tonic 0.12 |
 | HTTP | actix-web 4 |
-| Redis | redis-rs (连接池 + PubSub) |
-| 监控 | Prometheus 指标导出 |
+| WebSocket | tokio-tungstenite 0.24 |
+| Redis | redis-rs (连接池 + PubSub + Sentinel) |
+| 数据库 | PostgreSQL + SQLite (离线降级) |
+| 监控 | Prometheus + Grafana + Alertmanager |
+| 部署 | Docker Compose + Nginx L4/L7 |
+| CI/CD | GitHub Actions 5 阶段流水线 |
 | 日志 | tracing + tracing-subscriber |
+
+---
+## 版本历史
+
+| 版本 | 主题 | 核心成果 |
+|------|------|----------|
+| v0.1 | 核心骨架 | config/crypto/protocol/foundation + 17 TDD |
+| v0.2 | 网络+会话 | TCP握手/会话管理/心跳/I/O引擎 |
+| v0.3 | 游戏逻辑 | gRPC路由/战斗/场景/聊天/装备/任务 |
+| v0.4 | 客户端可玩 | 网页客户端/背包排序/装备对比/技能特效/NPC |
+| v0.5 | 生产化 | Docker Compose / WebSocket原生 / CI/CD / 反外挂 / SQLite |
+| v0.6 | 游戏内容 | 4地图/3Boss/公会/PvP/商店/职业/私聊/排行 |
+
+详细路线图见 [ROADMAP.md](ROADMAP.md)
 
 ---
 
@@ -391,4 +492,4 @@ MIT License
 
 ---
 
-*最后更新: 2026-07-11 | 72h 长稳压测运行中 | 80K pps 吞吐达标*
+*最后更新: 2026-07-11 | v0.6.0 满功能 MMO | 80K pps 吞吐 | 33+440 测试通过*
