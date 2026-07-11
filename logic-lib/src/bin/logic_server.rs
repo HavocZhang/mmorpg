@@ -107,6 +107,10 @@ const MOB_DEFS: &[MobDef] = &[
     MobDef { id: 3, name: "骷髅战士",   max_hp: 120, atk: 18, def: 8,  exp: 60,  level: 4, radius: 90.0,  detect_range: 140.0, attack_range: 35.0, attack_cd_ms: 1500, move_speed: 1.0 },
     MobDef { id: 4, name: "暗影法师",   max_hp: 90,  atk: 25, def: 3,  exp: 80,  level: 5, radius: 120.0, detect_range: 200.0, attack_range: 180.0, attack_cd_ms: 2200, move_speed: 0.6 },
     MobDef { id: 5, name: "岩石巨人",   max_hp: 300, atk: 30, def: 20, exp: 200, level: 8, radius: 60.0,  detect_range: 100.0, attack_range: 40.0, attack_cd_ms: 2500, move_speed: 0.5 },
+    // v0.6: Boss 怪物 (地图专属, 高属性, 增强掉落)
+    MobDef { id: 6, name: "森林守护者", max_hp: 1200, atk: 40, def: 25, exp: 500,  level: 12, radius: 100.0, detect_range: 200.0, attack_range: 80.0, attack_cd_ms: 1500, move_speed: 1.0 },
+    MobDef { id: 7, name: "沙虫领主",   max_hp: 800,  atk: 55, def: 15, exp: 600,  level: 15, radius: 80.0,  detect_range: 250.0, attack_range: 60.0, attack_cd_ms: 1200, move_speed: 2.0 },
+    MobDef { id: 8, name: "暗黑巫妖王", max_hp: 2000, atk: 65, def: 30, exp: 1000, level: 20, radius: 120.0, detect_range: 300.0, attack_range: 200.0, attack_cd_ms: 1000, move_speed: 0.8 },
 ];
 
 /// NPC 定义
@@ -135,6 +139,10 @@ const NPC_DEFS: &[NpcDef] = &[
     NpcDef { id: 10, name: "🏘 返回新手村", x: 50.0, y: 400.0, npc_type: "portal_map3", dialog: "返回新手村... (地图1)" },
     // v0.6: 地图4(地下城) 的返回传送门
     NpcDef { id: 11, name: "🏘 返回新手村", x: 50.0, y: 400.0, npc_type: "portal_map4", dialog: "返回新手村... (地图1)" },
+    // v0.6: Boss 副本入口 (交互后生成Boss)
+    NpcDef { id: 12, name: "🌿 森林守护者祭坛", x: 1200.0, y: 400.0, npc_type: "dungeon", dialog: "触碰祭坛召唤森林守护者... (Boss Lv12)" },
+    NpcDef { id: 13, name: "🏜 沙虫巢穴",       x: 1200.0, y: 400.0, npc_type: "dungeon2", dialog: "触碰巢穴召唤沙虫领主... (Boss Lv15)" },
+    NpcDef { id: 14, name: "💀 巫妖王王座",     x: 1200.0, y: 400.0, npc_type: "dungeon3", dialog: "触碰王座召唤暗黑巫妖王... (Boss Lv20)" },
 ];
 
 /// v0.6 地图定义
@@ -229,6 +237,16 @@ fn exp_for_level(level: u32) -> u32 {
 // ════════════════════════════════════════════════════════════════
 // 游戏状态结构
 // ════════════════════════════════════════════════════════════════
+
+// ── 公会 (v0.6) ──
+#[derive(Debug, Clone)]
+struct GuildInfo {
+    name: String,
+    leader: u64,
+    members: Vec<u64>,
+    funds: u32,
+    created_at: u64,
+}
 
 #[derive(Debug, Clone)]
 struct PlayerState {
@@ -711,6 +729,11 @@ pub struct GameState {
     pub online_count: std::sync::atomic::AtomicU64,
     pub last_mob_tick: std::sync::atomic::AtomicU64,
     pub party_mgr: logic_lib::party::PartyManager,
+    // v0.6: 公会系统
+    pub guilds: DashMap<String, GuildInfo>,
+    pub player_guild: DashMap<u64, String>, // uid → guild_name
+    // v0.6: PvP 决斗
+    pub duel_requests: DashMap<u64, u64>, // challenger_uid → target_uid
 }
 
 pub struct MockLogicService {
@@ -730,6 +753,9 @@ impl Default for MockLogicService {
             online_count: std::sync::atomic::AtomicU64::new(0),
             last_mob_tick: std::sync::atomic::AtomicU64::new(0),
             party_mgr: logic_lib::party::PartyManager::new(),
+            guilds: DashMap::new(),
+            player_guild: DashMap::new(),
+            duel_requests: DashMap::new(),
         };
 
         // Spawn 初始怪物
@@ -1145,6 +1171,76 @@ impl GameState {
                         "channel": channel,
                     }).to_string();
                     messages.push(dm(0, 7002, broadcast_json, 1));
+                }
+            }
+
+            // ── 公会系统 (v0.6) ──
+            2501 => { // 创建公会
+                let gname = json.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                if gname.is_empty() {
+                    messages.push(dm(uid, 7001, r#"{"error":"公会名不能为空"}"#.to_string(), 0));
+                } else if self.guilds.contains_key(&gname) {
+                    messages.push(dm(uid, 7001, format!(r#"{{"error":"公会 {} 已存在"}}"#, gname), 0));
+                } else if self.player_guild.contains_key(&uid) {
+                    messages.push(dm(uid, 7001, r#"{"error":"你已在公会中"}"#.to_string(), 0));
+                } else {
+                    let name = self.players.get(&uid).map(|p| p.name.clone()).unwrap_or("?".into());
+                    self.guilds.insert(gname.clone(), GuildInfo { name: gname.clone(), leader: uid, members: vec![uid], funds: 0, created_at: current_millis() });
+                    self.player_guild.insert(uid, gname.clone());
+                    messages.push(dm(uid, 7001, format!(r#"{{"type":"guild_created","name":"{}","leader":"{}"}}"#, gname, name), 1));
+                }
+            }
+            2502 => { // 加入公会
+                let gname = json.get("guildName").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                if let Some(mut g) = self.guilds.get_mut(&gname) {
+                    if !g.members.contains(&uid) {
+                        g.members.push(uid);
+                        self.player_guild.insert(uid, gname.clone());
+                        let name = self.players.get(&uid).map(|p| p.name.clone()).unwrap_or("?".into());
+                        messages.push(dm(uid, 7001, format!(r#"{{"type":"guild_joined","name":"{}"}}"#, gname), 1));
+                        for &mid in &g.members {
+                            if mid != uid { messages.push(dm(mid, 7002, serde_json::json!({"type":"guild_member_join","name":name}).to_string(), 1)); }
+                        }
+                    }
+                } else {
+                    messages.push(dm(uid, 7001, r#"{"error":"公会不存在"}"#.to_string(), 0));
+                }
+            }
+            2503 => { // 离开公会
+                if let Some((_, gname)) = self.player_guild.remove(&uid) {
+                    if let Some(mut g) = self.guilds.get_mut(&gname) {
+                        g.members.retain(|&m| m != uid);
+                        let name = self.players.get(&uid).map(|p| p.name.clone()).unwrap_or("?".into());
+                        messages.push(dm(uid, 7001, format!(r#"{{"type":"guild_left","name":"{}"}}"#, gname), 1));
+                        for &mid in &g.members {
+                            messages.push(dm(mid, 7002, serde_json::json!({"type":"guild_member_leave","name":name}).to_string(), 1));
+                        }
+                        if g.members.is_empty() { self.guilds.remove(&gname); }
+                    }
+                }
+            }
+
+            // ── PvP 决斗 (v0.6) ──
+            3100 => { // 发起决斗
+                let target = json.get("targetUid").and_then(|v| v.as_u64()).unwrap_or(0);
+                if target == uid || !self.players.contains_key(&target) {
+                    messages.push(dm(uid, 7001, r#"{"error":"目标玩家不存在"}"#.to_string(), 0));
+                } else {
+                    self.duel_requests.insert(uid, target);
+                    let cname = self.players.get(&uid).map(|p| p.name.clone()).unwrap_or("?".into());
+                    messages.push(dm(target, 7002, serde_json::json!({"type":"duel_request","from":uid,"fromName":cname}).to_string(), 1));
+                    messages.push(dm(uid, 7001, r#"{"type":"duel_sent"}"#.to_string(), 1));
+                }
+            }
+            3101 => { // 接受决斗
+                // Check if the player has any pending duel requests
+                let target_opt = self.duel_requests.iter().find(|r| *r.value() == uid).map(|r| *r.key());
+                if let Some(challenger) = target_opt {
+                    self.duel_requests.remove(&challenger);
+                    let cname = self.players.get(&challenger).map(|p| p.name.clone()).unwrap_or("?".into());
+                    let tname = self.players.get(&uid).map(|p| p.name.clone()).unwrap_or("?".into());
+                    messages.push(dm(uid, 7002, serde_json::json!({"type":"duel_start","against":challenger,"againstName":tname}).to_string(), 1));
+                    messages.push(dm(challenger, 7002, serde_json::json!({"type":"duel_start","against":uid,"againstName":cname}).to_string(), 1));
                 }
             }
 
@@ -1897,7 +1993,53 @@ impl GameState {
             }
         }
 
-        // healer 治疗
+        // v0.6: 地下城 — 生成Boss怪物
+        if npc.npc_type == "dungeon" || npc.npc_type.starts_with("dungeon") {
+            let boss_id: u32 = match npc.npc_type.as_str() {
+                "dungeon" | "dungeon2" => 6,
+                "dungeon3" => 7,
+                _ => 8,
+            };
+            // 检查Boss是否已存在
+            let boss_alive = self.mobs.iter().any(|m| m.value().def_id == boss_id);
+            if boss_alive {
+                let warn_json = serde_json::json!({"name":npc.name,"dialog":"Boss 还活着! 先击败它才能再次召唤。","type":"dungeon"}).to_string();
+                messages.push(dm(uid, 5006, warn_json, 0));
+            } else {
+                // 生成Boss (生成在NPC旁边)
+                let boss_x = npc.x + 40.0;
+                let boss_y = npc.y;
+                let entity_id = self.next_drop_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let mdef = get_mob_def(boss_id).unwrap();
+                let mob = MobEntity {
+                    entity_id,
+                    def_id: boss_id,
+                    name: mdef.name.to_string(),
+                    x: boss_x, y: boss_y,
+                    spawn_x: boss_x, spawn_y: boss_y,
+                    dir: 2,
+                    hp: mdef.max_hp,
+                    max_hp: mdef.max_hp,
+                    atk: mdef.atk,
+                    def: mdef.def,
+                    level: mdef.level,
+                    exp: mdef.exp,
+                    state: MobState::Idle,
+                    target_uid: None,
+                    last_attack: current_millis(),
+                    last_move: current_millis(),
+                    move_dir: 0.0,
+                    patrol_tx: Some(boss_x + mdef.radius),
+                    patrol_ty: Some(boss_y),
+                };
+                self.mobs.insert(entity_id, mob);
+                let name = get_mob_def(boss_id).map(|d| d.name).unwrap_or("Boss");
+                let spawn_json = serde_json::json!({"name":npc.name,"dialog":format!("{} 被召唤出来了!", name),"type":"dungeon","bossId":boss_id}).to_string();
+                messages.push(dm(uid, 5006, spawn_json, 0));
+            }
+        }
+
+
         if npc.npc_type == "healer" {
             if let Some(mut p) = self.players.get_mut(&uid) {
                 p.hp = p.max_hp;
@@ -2074,6 +2216,33 @@ impl GameState {
                 drops.push(ItemDrop { drop_id, item_id: 5, x: x - 10.0, y: y + 5.0, count: 1 });
                 let drop_id = self.next_drop_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 drops.push(ItemDrop { drop_id, item_id: 8, x: x + 5.0, y: y - 10.0, count: 1 });
+            }
+            // v0.6: Boss 掉落 (全部高价值物品)
+            6 => { // 森林守护者
+                let drop_id = self.next_drop_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                drops.push(ItemDrop { drop_id, item_id: 2, x: x + 10.0, y: y, count: 1 }); // 钢剑
+                let drop_id = self.next_drop_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                drops.push(ItemDrop { drop_id, item_id: 4, x: x - 10.0, y: y, count: 1 }); // 铁甲
+                let drop_id = self.next_drop_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                drops.push(ItemDrop { drop_id, item_id: 8, x: x, y: y + 10.0, count: 3 }); // 全恢复x3
+            }
+            7 => { // 沙虫领主
+                let drop_id = self.next_drop_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                drops.push(ItemDrop { drop_id, item_id: 2, x: x + 10.0, y: y, count: 1 }); // 钢剑
+                let drop_id = self.next_drop_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                drops.push(ItemDrop { drop_id, item_id: 5, x: x - 10.0, y: y, count: 2 }); // 力量戒指x2
+                let drop_id = self.next_drop_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                drops.push(ItemDrop { drop_id, item_id: 8, x: x, y: y + 10.0, count: 2 }); // 全恢复x2
+            }
+            8 => { // 暗黑巫妖王
+                let drop_id = self.next_drop_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                drops.push(ItemDrop { drop_id, item_id: 2, x: x + 10.0, y: y, count: 1 }); // 钢剑
+                let drop_id = self.next_drop_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                drops.push(ItemDrop { drop_id, item_id: 4, x: x - 10.0, y: y, count: 1 }); // 铁甲
+                let drop_id = self.next_drop_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                drops.push(ItemDrop { drop_id, item_id: 5, x: x + 5.0, y: y - 10.0, count: 3 }); // 戒指x3
+                let drop_id = self.next_drop_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                drops.push(ItemDrop { drop_id, item_id: 8, x: x - 5.0, y: y - 10.0, count: 5 }); // 全恢复x5
             }
             _ => {}
         }
