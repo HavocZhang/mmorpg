@@ -43,19 +43,17 @@ pub async fn wait_for_shutdown() {
 }
 
 /// 执行优雅停机流程
+///
+/// 注意：完整的优雅停机逻辑在 main.rs 中实现（信号监听 → 停止接受连接
+/// → 等待存量 → 清理会话 → 注销集群 → 停止HTTP）。本函数为占位接口，
+/// 保留供未来模块化重构使用。
 pub async fn graceful_shutdown() {
     info!("开始优雅停机...");
 
-    // 1. 停止接受新连接（由调用方控制 TCP listener abort）
-
-    // 2. 通知逻辑服所有玩家即将离线
-    // TODO: 遍历所有会话，向逻辑服发送离线通知
-
-    // 3. 注销集群节点
-    // TODO: 调用 cluster::node_register::unregister()
-
-    // 4. 等待存量消息处理完成
-    // TODO: 等待 WriteLoop 队列刷新
+    // 1. 停止接受新连接（main.rs: tcp_handle.abort()）
+    // 2. 通知逻辑服所有玩家即将离线（main.rs: 遍历会话 kick）
+    // 3. 注销集群节点（main.rs: cluster_mgr.shutdown()）
+    // 4. 等待存量消息处理完成（main.rs: 5s grace period）
 
     info!("优雅停机完成");
 }

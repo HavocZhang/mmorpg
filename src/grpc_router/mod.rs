@@ -7,7 +7,6 @@ pub mod downstream;
 pub mod proto;
 pub mod upstream;
 
-use std::sync::Arc;
 
 use crate::config::AppConfig;
 use crate::foundation::GateError;

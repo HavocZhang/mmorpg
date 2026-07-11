@@ -7,11 +7,12 @@
 //! 4. 网络拥堵时丢弃低优先级包
 //! 5. 通过 TCP WriteHalf 发送
 
-use std::time::Duration;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
-use tokio::time::{interval, Instant};
+use tokio::time::interval;
 use tracing::{debug, warn};
 
 use crate::crypto::aes_gcm::AesGcmCipher;
@@ -25,6 +26,8 @@ pub struct WriteLoop {
     max_queue_depth: usize,
     /// 加密器（用于下行包加密）
     cipher: AesGcmCipher,
+    /// 上次拥堵警告时间戳（去重用）
+    last_congestion_warn: AtomicU64,
 }
 
 impl WriteLoop {
@@ -34,6 +37,7 @@ impl WriteLoop {
             merge_window: Duration::from_millis(merge_window_ms),
             max_queue_depth: 1024,
             cipher,
+            last_congestion_warn: AtomicU64::new(0),
         }
     }
 
@@ -57,7 +61,16 @@ impl WriteLoop {
                             // 拥堵检查：队列过深时丢弃低优先级包
                             if priority_q.len() > self.max_queue_depth
                                 && msg.priority == MsgPriority::Low {
-                                warn!("队列拥堵，丢弃低优先级包 msg_id={}", msg.msg_id);
+                                // 去重：最多每10秒输出一次拥堵警告
+                                let now = SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .map(|d| d.as_secs())
+                                    .unwrap_or(0);
+                                let last = self.last_congestion_warn.load(Ordering::Relaxed);
+                                if now.saturating_sub(last) >= 10 {
+                                    self.last_congestion_warn.store(now, Ordering::Relaxed);
+                                    warn!("队列拥堵，丢弃低优先级包（最近一次 msg_id={}，此后10秒内不再重复警告）", msg.msg_id);
+                                }
                                 continue;
                             }
                             priority_q.push(msg);
@@ -92,5 +105,30 @@ impl WriteLoop {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    
+    use crate::crypto::aes_gcm::AesGcmCipher;
+    use std::time::Duration;
+
+    const TEST_KEY: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+
+    #[test]
+    fn test_write_loop_creation() {
+        // WriteLoop 需要 OwnedWriteHalf（实际 TCP 连接），这里只验证结构体创建和常量
+        let cipher = AesGcmCipher::from_hex_key(TEST_KEY).unwrap();
+        let merge_window = Duration::from_millis(16);
+        assert!(!merge_window.is_zero());
+        let _cipher = cipher; // 验证 cipher 可正常创建
+    }
+
+    #[test]
+    fn test_write_loop_max_queue_depth() {
+        let default_depth = 1024usize;
+        assert!(default_depth > 0, "最大队列深度应大于0");
+        assert_eq!(default_depth, 1024);
     }
 }

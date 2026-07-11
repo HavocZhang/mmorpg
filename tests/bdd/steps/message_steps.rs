@@ -101,7 +101,7 @@ async fn then_one_write_call(world: &mut BddWorld) {
 }
 
 #[then("小包合并压缩率应不低于70%")]
-async fn then_merge_ratio_70(world: &mut BddWorld) {
+async fn then_merge_ratio_70(_world: &mut BddWorld) {
     // 10个包，每包开销: 16字节包头 + 2(id) + 4(len) + 50(payload) = 72字节
     // 不合并: 10 * (16 + 50) = 660 字节（仅 payload+header）
     // 合并后: 16(包头) + 10 * (2 + 4 + 50) = 16 + 560 = 576 字节

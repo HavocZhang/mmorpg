@@ -63,8 +63,8 @@ fn test_fuzz_valid_magic_bad_rest() {
         data[1] = 0x4D;
         data[2] = 0x01; // valid version
         // 随机填充剩余部分
-        for i in 3..32 {
-            data[i] = rng.gen();
+        for elem in &mut data[3..32] {
+            *elem = rng.gen();
         }
         decoder.feed(&data);
         // 应该返回错误或 None，不应 panic

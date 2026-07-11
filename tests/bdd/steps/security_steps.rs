@@ -41,7 +41,7 @@ async fn when_send_30_packets(world: &mut BddWorld, uid: String) {
 }
 
 #[then("所有30个包应被允许通过")]
-async fn then_all_30_allowed(world: &mut BddWorld) {
+async fn then_all_30_allowed(_world: &mut BddWorld) {
     // 已在 when 中断言
     assert!(true);
 }
@@ -95,7 +95,7 @@ async fn when_send_80_packets(world: &mut BddWorld, uid: String) {
 }
 
 #[then("所有80个包应被允许通过")]
-async fn then_all_80_allowed(world: &mut BddWorld) {
+async fn then_all_80_allowed(_world: &mut BddWorld) {
     assert!(true);
 }
 
@@ -144,7 +144,7 @@ async fn then_queued(world: &mut BddWorld) {
 }
 
 #[then("战斗包不应被丢弃")]
-async fn then_battle_not_discarded(world: &mut BddWorld) {
+async fn then_battle_not_discarded(_world: &mut BddWorld) {
     // 战斗包在应用层通过优先级保证不丢
     assert!(true);
 }

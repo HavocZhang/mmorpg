@@ -212,6 +212,7 @@ async fn remove_blacklist_handler(
 }
 
 /// GET /merge_stats - 合包压缩率统计
+#[allow(clippy::manual_checked_ops)]
 async fn merge_stats_handler() -> impl Responder {
     let snap = crate::io_engine::packet_merge::merge_stats_with_recent();
     HttpResponse::Ok().json(serde_json::json!({

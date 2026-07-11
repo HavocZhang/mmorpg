@@ -32,7 +32,7 @@ const HEADER_SIZE: usize = 16;
 // CRC32 table
 fn crc32_table() -> [u32; 256] {
     let mut table = [0u32; 256];
-    for i in 0..256 {
+    for (i, entry) in table.iter_mut().enumerate() {
         let mut c = i as u32;
         for _ in 0..8 {
             if c & 1 != 0 {
@@ -41,7 +41,7 @@ fn crc32_table() -> [u32; 256] {
                 c >>= 1;
             }
         }
-        table[i] = c;
+        *entry = c;
     }
     table
 }
@@ -145,11 +145,8 @@ async fn read_all_responses(
     timeout_ms: u64,
 ) -> Vec<(u16, Vec<u8>)> {
     let mut responses = vec![];
-    loop {
-        match read_response(stream, cipher, timeout_ms).await {
-            Some(resp) => responses.push(resp),
-            None => break,
-        }
+    while let Some(resp) = read_response(stream, cipher, timeout_ms).await {
+        responses.push(resp);
     }
     responses
 }

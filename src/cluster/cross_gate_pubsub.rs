@@ -163,3 +163,22 @@ impl CrossGatePubSub {
 }
 
 use futures_util::StreamExt;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cross_gate_msg_creation() {
+        let msg = CrossGateMsg {
+            from_node: 1,
+            to_uid: 100,
+            msg_id: 2001,
+            payload: b"hello".to_vec(),
+            priority: 1,
+        };
+        assert_eq!(msg.from_node, 1);
+        assert_eq!(msg.to_uid, 100);
+        assert_eq!(msg.msg_id, 2001);
+    }
+}

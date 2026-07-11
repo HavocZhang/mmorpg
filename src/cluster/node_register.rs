@@ -95,3 +95,29 @@ impl NodeRegister {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_node_info_struct() {
+        let info = NodeInfo {
+            node_id: 1,
+            node_name: "gate-01".into(),
+            addr: "127.0.0.1:7888".into(),
+            online_count: 0,
+            started_at: 1234567890,
+        };
+        assert_eq!(info.node_id, 1);
+        assert_eq!(info.node_name, "gate-01");
+        // addr includes port
+        assert_eq!(info.online_count, 0);
+    }
+
+    #[test]
+    fn test_node_register_creation() {
+        let _reg = NodeRegister::new(1, "gate-01".into(), "redis://127.0.0.1:6379".into());
+        // NodeRegister created successfully
+    }
+}

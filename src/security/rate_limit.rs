@@ -61,6 +61,7 @@ impl RateCounter {
     }
 
     /// 仅检查不递增
+    #[allow(dead_code)]
     fn check(&self, limit: u32) -> bool {
         let now = Instant::now();
         if now.duration_since(self.window_start) >= Duration::from_secs(1) {

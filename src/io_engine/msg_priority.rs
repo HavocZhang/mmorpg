@@ -9,7 +9,7 @@
 
 use std::collections::BinaryHeap;
 
-use crate::session::session_struct::{MsgPriority, PendingMsg};
+use crate::session::session_struct::PendingMsg;
 
 /// 优先级队列包装（BinaryHeap 需要实现 Ord，反转使 High 先出）
 struct PrioritizedMsg(PendingMsg);
@@ -84,6 +84,7 @@ impl Default for PriorityQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session::session_struct::MsgPriority;
 
     fn make_msg(id: u16, priority: MsgPriority) -> PendingMsg {
         PendingMsg {

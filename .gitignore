@@ -1,37 +1,39 @@
-# Rust
-/target
-/target_unit
-**/*.rs.bk
+# Build artifacts
+target/
+logic-lib/target/
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
-*~
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Env (keep templates, ignore actual configs)
+# Runtime
+*.log
+gateway_*.log
+stress_*.log
+*.exe
+*.pdb
+
+# Project local data
+.workbuddy/
+
+# Node modules
+web-client/node_modules/
+node_modules/
+
+# Environment (keep .env example only)
 .env
 .env.local
-.env.dev
-.env.prod
-.env.test
 
-# Logs
-*.log
-logs/
-logs_*.txt
+# Reports (generated HTML)
+FINAL_AUDIT_REPORT.html
+FULL_DELIVERY_REPORT.html
+STRESS_TEST_REPORT.html
 
-# Web client
-web-client/node_modules/
-web-client/stability_reports/
-web-client/stability_run*.log
-web-client/stability_small*.log
-
-# Runtime artifacts
-*.pid
-*.dump
+# Archived old bins
+.archived_bins/

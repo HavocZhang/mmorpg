@@ -15,6 +15,7 @@ pub struct SceneManager {
 }
 
 struct SceneMap {
+    #[allow(dead_code)]
     name: String,
     width: f64,
     height: f64,

@@ -98,7 +98,7 @@ impl SceneState {
             if oid == uid { continue; }
             if let Some(&(ox, oy)) = self.player_pos.get(&oid) {
                 let new_dist = ((cx - ox).powi(2) + (cy - oy).powi(2)).sqrt();
-                let was_in_range = old_pos.map_or(false, |(px, py)| {
+                let was_in_range = old_pos.is_some_and(|(px, py)| {
                     ((px - ox).powi(2) + (py - oy).powi(2)).sqrt() <= self.aoi_radius
                 });
                 if new_dist <= self.aoi_radius {
@@ -140,6 +140,506 @@ impl SceneState {
 
     pub fn map_player_count(&self, map_name: &str) -> usize {
         self.player_map.iter().filter(|(_, m)| m.as_str() == map_name).count()
+    }
+}
+
+/// 战斗服模拟状态（BDD 测试用）
+#[derive(Debug, Default)]
+pub struct CombatState {
+    pub entities: std::collections::HashMap<u64, CombatEntityState>,
+    pub battle_results: Vec<CombatResult>,
+    pub death_events: Vec<CombatDeathEvent>,
+    pub buffs: std::collections::HashMap<u64, Vec<CombatBuff>>,
+    pub xp_events: Vec<CombatXpEvent>,
+    pub last_damage: Option<i64>,
+    pub last_action: Option<String>,
+    /// entity_id -> entity_id -> bool
+    pub combat_relations: std::collections::HashMap<u64, std::collections::HashSet<u64>>,
+    pub combat_states: std::collections::HashMap<u64, String>,
+    pub broadcast_targets: Vec<u64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CombatEntityState {
+    pub entity_type: String, // "player" or "monster"
+    pub hp: i64,
+    pub max_hp: i64,
+    pub atk: i64,
+    pub def: i64,
+    pub crit_rate: f64,    // percentage 0-100
+    pub crit_dmg: f64,     // multiplier
+    pub level: u32,
+    pub xp: u64,
+    pub xp_to_level: u64,
+    pub kill_xp: u64,      // XP awarded when killed
+    pub alive: bool,
+    pub xp_events_recorded: Vec<i64>,
+    pub level_ups: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct CombatResult {
+    pub attacker_id: u64,
+    pub target_id: u64,
+    pub damage: i64,
+    pub is_crit: bool,
+    pub skill_multiplier: f64,
+    pub msg_id: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct CombatDeathEvent {
+    pub entity_id: u64,
+    pub killer_id: u64,
+    pub drops: Vec<CombatDrop>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CombatDrop {
+    pub item_name: String,
+    pub quantity: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct CombatBuff {
+    pub buff_type: String,
+    pub value: i64,
+    pub remaining_seconds: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct CombatXpEvent {
+    pub entity_id: u64,
+    pub xp_gained: u64,
+    pub leveled_up: bool,
+}
+
+impl CombatState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn set_entity(&mut self, id: u64, entity_type: &str, atk: i64, def: i64, crit_rate: f64, crit_dmg: f64, level: u32) {
+        let hp = 100 * level as i64;
+        self.entities.insert(id, CombatEntityState {
+            entity_type: entity_type.to_string(),
+            hp,
+            max_hp: hp,
+            atk,
+            def,
+            crit_rate,
+            crit_dmg,
+            level,
+            xp: 0,
+            xp_to_level: 100 * level as u64,
+            kill_xp: 50 * level as u64,
+            alive: true,
+            xp_events_recorded: Vec::new(),
+            level_ups: 0,
+        });
+    }
+
+    pub fn set_hp(&mut self, id: u64, hp: i64) {
+        if let Some(e) = self.entities.get_mut(&id) {
+            e.hp = hp;
+            e.max_hp = hp.max(e.max_hp);
+        }
+    }
+
+    pub fn set_xp_to_level(&mut self, id: u64, remaining: u64) {
+        if let Some(e) = self.entities.get_mut(&id) {
+            let mut total = 0u64;
+            for lvl in 0..e.level {
+                total += 100 * lvl as u64;
+            }
+            e.xp = total + e.level as u64 * 100 - remaining;
+            e.xp_to_level = e.level as u64 * 100;
+        }
+    }
+
+    pub fn set_kill_xp(&mut self, id: u64, xp: u64) {
+        if let Some(e) = self.entities.get_mut(&id) {
+            e.kill_xp = xp;
+        }
+    }
+
+    pub fn calculate_damage(&mut self, attacker_id: u64, target_id: u64, skill_multiplier: f64) -> i64 {
+        let attacker = match self.entities.get(&attacker_id) {
+            Some(a) => a.clone(),
+            None => {
+                self.last_damage = Some(0);
+                return 0;
+            }
+        };
+        let target = match self.entities.get(&target_id) {
+            Some(t) => t.clone(),
+            None => {
+                self.last_damage = Some(0);
+                return 0;
+            }
+        };
+
+        // Apply buffs
+        let mut atk = attacker.atk;
+        let mut target_def = target.def;
+        if let Some(buffs) = self.buffs.get(&attacker_id) {
+            for b in buffs {
+                if b.buff_type == "攻击加成" { atk += b.value; }
+            }
+        }
+        if let Some(buffs) = self.buffs.get(&target_id) {
+            for b in buffs {
+                if b.buff_type == "防御降低" { target_def = (target_def - b.value).max(0); }
+            }
+        }
+
+        // Base damage
+        let raw = (atk as f64 * skill_multiplier) as i64;
+        // Defense reduction
+        let def_reduction = (target_def as f64 * 0.5) as i64;
+        let mut damage = (raw - def_reduction).max(1);
+
+        // Critical hit
+        let is_crit = (rand::random::<f64>() * 100.0) < attacker.crit_rate;
+        if is_crit {
+            damage = (damage as f64 * attacker.crit_dmg) as i64;
+        }
+
+        // Apply damage
+        if let Some(e) = self.entities.get_mut(&target_id) {
+            e.hp = (e.hp - damage).max(0);
+            if e.hp == 0 {
+                e.alive = false;
+            }
+        }
+
+        self.last_damage = Some(damage);
+        self.last_action = Some(if is_crit { "暴击" } else { "普通攻击" }.to_string());
+
+        let result = CombatResult {
+            attacker_id,
+            target_id,
+            damage,
+            is_crit,
+            skill_multiplier,
+            msg_id: 6001,
+        };
+        self.battle_results.push(result);
+
+        // Register combat relation
+        self.combat_relations.entry(attacker_id).or_default().insert(target_id);
+        self.combat_relations.entry(target_id).or_default().insert(attacker_id);
+
+        // Set broadcast targets
+        self.broadcast_targets.push(attacker_id);
+        self.broadcast_targets.push(target_id);
+
+        // Handle death
+        if !self.entities[&target_id].alive {
+            // XP gain
+            let kill_xp = self.entities[&target_id].kill_xp;
+            if let Some(attacker) = self.entities.get_mut(&attacker_id) {
+                attacker.xp += kill_xp;
+                let leveled = attacker.xp >= attacker.xp_to_level;
+                let xp_event = CombatXpEvent {
+                    entity_id: attacker_id,
+                    xp_gained: kill_xp,
+                    leveled_up: leveled,
+                };
+                if leveled {
+                    attacker.level += 1;
+                    attacker.level_ups += 1;
+                    attacker.xp_to_level = attacker.level as u64 * 100;
+                    attacker.atk += 20;
+                    attacker.def += 10;
+                    attacker.max_hp += 50;
+                    attacker.hp = attacker.max_hp;
+                }
+                attacker.xp_events_recorded.push(kill_xp as i64);
+                self.xp_events.push(xp_event);
+            }
+            // Death event with drops
+            let drops = vec![
+                CombatDrop { item_name: "金币".to_string(), quantity: (target.level * 10) },
+                CombatDrop { item_name: "经验药水".to_string(), quantity: 1 },
+            ];
+            self.death_events.push(CombatDeathEvent {
+                entity_id: target_id,
+                killer_id: attacker_id,
+                drops,
+            });
+        }
+
+        damage
+    }
+
+    pub fn calculate_aoe_damage(&mut self, attacker_id: u64, target_ids: &[u64], _range: f64) -> Vec<(u64, i64)> {
+        let mut results = Vec::new();
+        for &tid in target_ids {
+            // AOE does 80% of single-target damage
+            let dmg = self.calculate_damage(attacker_id, tid, 0.8);
+            results.push((tid, dmg));
+        }
+        results
+    }
+
+    pub fn apply_buff(&mut self, target_id: u64, buff_type: &str, value: i64, duration_secs: u32) {
+        self.buffs.entry(target_id).or_default().push(CombatBuff {
+            buff_type: buff_type.to_string(),
+            value,
+            remaining_seconds: duration_secs,
+        });
+    }
+
+    pub fn get_effective_atk(&self, id: u64) -> i64 {
+        let base = self.entities.get(&id).map(|e| e.atk).unwrap_or(0);
+        let bonus = self.buffs.get(&id).map(|buffs| {
+            buffs.iter().filter(|b| b.buff_type == "攻击加成").map(|b| b.value).sum::<i64>()
+        }).unwrap_or(0);
+        base + bonus
+    }
+
+    pub fn get_effective_def(&self, id: u64) -> i64 {
+        let base = self.entities.get(&id).map(|e| e.def).unwrap_or(0);
+        let penalty = self.buffs.get(&id).map(|buffs| {
+            buffs.iter().filter(|b| b.buff_type == "防御降低").map(|b| b.value).sum::<i64>()
+        }).unwrap_or(0);
+        (base - penalty).max(0)
+    }
+
+    pub fn set_combat_state(&mut self, id: u64, state: &str) {
+        self.combat_states.insert(id, state.to_string());
+    }
+
+    pub fn get_combat_state(&self, id: u64) -> String {
+        self.combat_states.get(&id).cloned().unwrap_or_else(|| "空闲".to_string())
+    }
+
+    pub fn is_dead(&self, id: u64) -> bool {
+        self.entities.get(&id).map(|e| !e.alive).unwrap_or(false)
+    }
+
+    pub fn get_hp(&self, id: u64) -> i64 {
+        self.entities.get(&id).map(|e| e.hp).unwrap_or(0)
+    }
+}
+
+/// 聊天服模拟状态（BDD 测试用）
+#[derive(Debug, Default)]
+pub struct ChatState {
+    pub channels: std::collections::HashMap<String, ChatChannel>,
+    pub connected_players: std::collections::HashSet<u64>,
+    pub player_channels: std::collections::HashMap<u64, Vec<String>>,
+    pub guilds: std::collections::HashMap<String, std::collections::HashSet<u64>>,
+    pub parties: std::collections::HashMap<u64, std::collections::HashSet<u64>>,
+    pub private_messages: Vec<(u64, u64, String)>,
+    pub guild_messages: Vec<(u64, String, String)>,
+    pub party_messages: Vec<(u64, u64, String)>,
+    pub broadcast_receivers: std::collections::HashMap<String, std::collections::HashSet<u64>>,
+    pub history_results: Vec<String>,
+    pub rate_limit_counters: std::collections::HashMap<u64, u32>,
+    pub max_messages_per_second: u32,
+    pub max_message_length: usize,
+    pub sensitive_words: Vec<String>,
+    pub filtered_event: bool,
+    pub offline_messages: std::collections::HashMap<u64, Vec<String>>,
+    pub rate_limit_warnings: Vec<u64>,
+    pub message_too_long_errors: Vec<u64>,
+    pub last_error: Option<String>,
+    pub acks: Vec<u64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChatChannel {
+    pub name: String,
+    pub channel_type: String,
+    pub messages: Vec<(u64, String)>,
+    pub members: std::collections::HashSet<u64>,
+}
+
+impl ChatState {
+    pub fn new() -> Self {
+        Self { max_messages_per_second: 5, max_message_length: 500, ..Default::default() }
+    }
+
+    pub fn connect_player(&mut self, uid: u64) {
+        self.connected_players.insert(uid);
+    }
+
+    pub fn disconnect_player(&mut self, uid: u64) {
+        self.connected_players.remove(&uid);
+    }
+
+    pub fn ensure_channel(&mut self, name: &str, channel_type: &str) {
+        self.channels.entry(name.to_string()).or_insert_with(|| ChatChannel {
+            name: name.to_string(),
+            channel_type: channel_type.to_string(),
+            messages: Vec::new(),
+            members: std::collections::HashSet::new(),
+        });
+    }
+
+    pub fn join_channel(&mut self, uid: u64, name: &str) {
+        self.ensure_channel(name, "world");
+        if let Some(ch) = self.channels.get_mut(name) {
+            ch.members.insert(uid);
+        }
+        self.player_channels.entry(uid).or_default().push(name.to_string());
+    }
+
+    pub fn send_message(&mut self, uid: u64, channel: &str, text: &str) -> Result<(), String> {
+        if text.len() > self.max_message_length {
+            self.message_too_long_errors.push(uid);
+            return Err("消息过长".to_string());
+        }
+        for word in &self.sensitive_words {
+            if text.contains(word) {
+                self.filtered_event = true;
+                return Err("消息被过滤".to_string());
+            }
+        }
+        let count = self.rate_limit_counters.entry(uid).or_insert(0);
+        if *count >= self.max_messages_per_second {
+            self.rate_limit_warnings.push(uid);
+            return Err("发送频率过快".to_string());
+        }
+        *count += 1;
+
+        self.ensure_channel(channel, "world");
+        if let Some(ch) = self.channels.get_mut(channel) {
+            ch.messages.push((uid, text.to_string()));
+        }
+        self.acks.push(uid);
+
+        if let Some(ch) = self.channels.get(channel) {
+            for &member in &ch.members {
+                if member != uid {
+                    self.broadcast_receivers.entry(channel.to_string()).or_default().insert(member);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn send_private(&mut self, from: u64, to: u64, text: &str) -> Result<(), String> {
+        if text.len() > self.max_message_length {
+            self.message_too_long_errors.push(from);
+            return Err("消息过长".to_string());
+        }
+        for word in &self.sensitive_words {
+            if text.contains(word) {
+                self.filtered_event = true;
+                return Err("消息被过滤".to_string());
+            }
+        }
+        let count = self.rate_limit_counters.entry(from).or_insert(0);
+        if *count >= self.max_messages_per_second {
+            self.rate_limit_warnings.push(from);
+            return Err("发送频率过快".to_string());
+        }
+        *count += 1;
+
+        self.private_messages.push((from, to, text.to_string()));
+        self.acks.push(from);
+
+        if !self.connected_players.contains(&to) {
+            self.offline_messages.entry(to).or_default().push(text.to_string());
+        }
+        Ok(())
+    }
+
+    pub fn send_guild(&mut self, from: u64, guild: &str, text: &str) -> Result<(), String> {
+        if text.len() > self.max_message_length {
+            self.message_too_long_errors.push(from);
+            return Err("消息过长".to_string());
+        }
+        for word in &self.sensitive_words {
+            if text.contains(word) {
+                self.filtered_event = true;
+                return Err("消息被过滤".to_string());
+            }
+        }
+        let count = self.rate_limit_counters.entry(from).or_insert(0);
+        if *count >= self.max_messages_per_second {
+            self.rate_limit_warnings.push(from);
+            return Err("发送频率过快".to_string());
+        }
+        *count += 1;
+
+        self.guild_messages.push((from, guild.to_string(), text.to_string()));
+        self.acks.push(from);
+
+        if let Some(members) = self.guilds.get(guild) {
+            for &member in members {
+                if member != from {
+                    let ch_key = format!("guild:{}", guild);
+                    self.broadcast_receivers.entry(ch_key).or_default().insert(member);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn send_party(&mut self, from: u64, party_id: u64, text: &str) -> Result<(), String> {
+        if text.len() > self.max_message_length {
+            self.message_too_long_errors.push(from);
+            return Err("消息过长".to_string());
+        }
+        for word in &self.sensitive_words {
+            if text.contains(word) {
+                self.filtered_event = true;
+                return Err("消息被过滤".to_string());
+            }
+        }
+        let count = self.rate_limit_counters.entry(from).or_insert(0);
+        if *count >= self.max_messages_per_second {
+            self.rate_limit_warnings.push(from);
+            return Err("发送频率过快".to_string());
+        }
+        *count += 1;
+
+        self.party_messages.push((from, party_id, text.to_string()));
+        self.acks.push(from);
+
+        if let Some(members) = self.parties.get(&party_id) {
+            for &member in members {
+                if member != from {
+                    let ch_key = format!("party:{}", party_id);
+                    self.broadcast_receivers.entry(ch_key).or_default().insert(member);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn query_history(&mut self, channel: &str, limit: usize) -> Vec<String> {
+        self.ensure_channel(channel, "world");
+        let ch = self.channels.get(channel).unwrap();
+        let msgs: Vec<String> = ch.messages.iter().map(|(_, t)| t.clone()).collect();
+        let start = if msgs.len() > limit { msgs.len() - limit } else { 0 };
+        let result = msgs[start..].to_vec();
+        self.history_results = result.clone();
+        result
+    }
+
+    pub fn set_sensitive_words(&mut self, words: &[&str]) {
+        self.sensitive_words = words.iter().map(|s| s.to_string()).collect();
+    }
+
+    pub fn create_guild(&mut self, name: &str) {
+        self.guilds.entry(name.to_string()).or_default();
+    }
+
+    pub fn join_guild(&mut self, uid: u64, name: &str) {
+        self.guilds.entry(name.to_string()).or_default().insert(uid);
+    }
+
+    pub fn create_party(&mut self, party_id: u64) {
+        self.parties.entry(party_id).or_default();
+    }
+
+    pub fn join_party(&mut self, uid: u64, party_id: u64) {
+        self.parties.entry(party_id).or_default().insert(uid);
     }
 }
 
@@ -200,6 +700,12 @@ pub struct BddWorld {
 
     // ── 场景服状态 ──
     pub scene_state: Option<SceneState>,
+
+    // ── 战斗服状态 ──
+    pub combat_state: Option<CombatState>,
+
+    // ── 聊天服状态 ──
+    pub chat_state: Option<ChatState>,
 
     // ── 通用 ──
     pub elapsed_seconds: u64,
@@ -274,6 +780,10 @@ impl BddWorld {
 
             scene_state: None,
 
+            combat_state: None,
+
+            chat_state: None,
+
             elapsed_seconds: 0,
         }
     }
@@ -336,6 +846,8 @@ impl std::fmt::Debug for BddWorld {
             .field("shutdown_complete", &self.shutdown_complete)
             .field("startup_ready", &self.startup_ready)
             .field("scene_state", &self.scene_state.is_some())
+            .field("combat_state", &self.combat_state.is_some())
+            .field("chat_state", &self.chat_state.is_some())
             .finish()
     }
 }

@@ -7,7 +7,6 @@ pub mod rate_limit;
 pub mod security_audit;
 
 use std::net::IpAddr;
-use std::sync::Arc;
 
 use crate::config::AppConfig;
 use crate::foundation::GateError;
@@ -53,5 +52,34 @@ impl SecurityManager {
     /// 记录安全事件
     pub fn record_security_event(&self, ip: &IpAddr, error: &GateError) {
         security_audit::SecurityAudit::record(ip, error);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::AppConfig;
+
+    #[test]
+    fn test_security_manager_creation() {
+        let config = AppConfig::load().unwrap();
+        let mgr = SecurityManager::new(&config);
+        let ip: IpAddr = "10.0.0.1".parse().unwrap();
+        assert!(!mgr.is_ip_blocked(&ip));
+    }
+
+    #[test]
+    fn test_security_manager_connect_rate_check() {
+        let config = AppConfig::load().unwrap();
+        let mgr = SecurityManager::new(&config);
+        let ip: IpAddr = "192.168.1.1".parse().unwrap();
+        assert!(mgr.check_connect_rate(&ip));
+    }
+
+    #[test]
+    fn test_security_manager_player_rate_check() {
+        let config = AppConfig::load().unwrap();
+        let mgr = SecurityManager::new(&config);
+        assert!(mgr.check_player_rate(12345, false));
     }
 }

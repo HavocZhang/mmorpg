@@ -66,3 +66,22 @@ impl MonitorApi {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_health_response_serialization() {
+        let health = HealthResponse {
+            status: "ok".into(),
+            online_count: 2500,
+            uptime_secs: 3600,
+
+
+        };
+        let json = serde_json::to_string(&health).unwrap();
+        assert!(json.contains("\"status\":\"ok\""));
+        assert!(json.contains("\"online_count\":2500"));
+    }
+}

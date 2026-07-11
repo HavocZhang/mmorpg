@@ -19,7 +19,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 use crate::cluster::cross_gate_pubsub::{CrossGateMsg, CrossGatePubSub};
 use crate::cluster::route_index::RouteIndex;
@@ -105,36 +105,38 @@ pub async fn handle_connection(
                 }
             });
 
-            // --- 通知逻辑服玩家上线 ---
-            let pool_for_online = router_mgr.conn_pool.clone();
-            let node_name_for_online = config.gate.node_name.clone();
-            let uid_for_online = handshake_info.player_uid;
-            let session_mgr_for_online = session_mgr.clone();
-            let cluster_for_online = cluster_mgr.clone();
-            tokio::spawn(async move {
-                let router = crate::grpc_router::upstream::UpstreamRouter::new(pool_for_online);
-                match router
-                    .notify_player_online(uid_for_online, session_id, &node_name_for_online)
-                    .await
-                {
-                    Ok(messages) => {
-                        // 分发逻辑服返回的上线消息
-                        let downstream = Arc::new(DownstreamDispatcher::new(session_mgr_for_online.clone()));
-                        for dm in &messages {
-                            dispatch_downstream(
-                                &downstream,
-                                dm,
-                                &session_mgr_for_online,
-                                &cluster_for_online,
-                                session_id,
-                            );
+            // --- 通知逻辑服玩家上线（仅在 gRPC 可用时） ---
+            if router_mgr.conn_pool.has_healthy_endpoint() {
+                let pool_for_online = router_mgr.conn_pool.clone();
+                let node_name_for_online = config.gate.node_name.clone();
+                let uid_for_online = handshake_info.player_uid;
+                let session_mgr_for_online = session_mgr.clone();
+                let cluster_for_online = cluster_mgr.clone();
+                tokio::spawn(async move {
+                    let router = crate::grpc_router::upstream::UpstreamRouter::new(pool_for_online);
+                    match router
+                        .notify_player_online(uid_for_online, session_id, &node_name_for_online)
+                        .await
+                    {
+                        Ok(messages) => {
+                            // 分发逻辑服返回的上线消息
+                            let downstream = Arc::new(DownstreamDispatcher::new(session_mgr_for_online.clone()));
+                            for dm in &messages {
+                                dispatch_downstream(
+                                    &downstream,
+                                    dm,
+                                    &session_mgr_for_online,
+                                    &cluster_for_online,
+                                    session_id,
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            debug!("玩家上线通知失败（不阻断）: uid={} err={}", uid_for_online, e);
                         }
                     }
-                    Err(e) => {
-                        debug!("玩家上线通知失败（不阻断）: uid={} err={}", uid_for_online, e);
-                    }
-                }
-            });
+                });
+            }
 
             // --- 更新 Redis 路由索引 ---
             let uid_for_route = handshake_info.player_uid;
@@ -168,64 +170,86 @@ pub async fn handle_connection(
                     session_mgr_clone.touch_session(session_id);
 
                     // 安全校验：消息频率限流
-                    let is_battle = msg_id >= 1000 && msg_id < 2000;
+                    let is_battle = (1000..2000).contains(&msg_id);
                     if !security_mgr_clone.check_player_rate(player_uid, is_battle) {
                         warn!("玩家消息限流: uid={} msg_id={}", player_uid, msg_id);
                         return;
                     }
 
-                    // 上行路由到逻辑服（异步任务）
-                    let pool = conn_pool.clone();
-                    let downstream_clone = downstream.clone();
-                    let session_mgr_for_fallback = session_mgr_clone.clone();
-                    let cluster_for_dispatch = cluster_mgr_clone.clone();
-                    tokio::spawn(async move {
-                        let router = crate::grpc_router::upstream::UpstreamRouter::new(pool);
-
-                        match router.route(player_uid, msg_id, payload.clone()).await {
-                            Ok(response) => {
-                                // 成功收到逻辑服响应，分发下行消息
-                                for dm in &response.messages {
-                                    dispatch_downstream(
-                                        &downstream_clone,
-                                        dm,
-                                        &session_mgr_for_fallback,
-                                        &cluster_for_dispatch,
-                                        session_id,
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                // 逻辑服不可用，降级为本地回显
-                                debug!(
-                                    "逻辑服不可用，降级回显: uid={} msg_id={} err={}",
-                                    player_uid, msg_id, e
-                                );
-
-                                let priority = if is_battle {
-                                    MsgPriority::High
-                                } else if msg_id >= 2000 && msg_id < 3000 {
-                                    MsgPriority::Normal
-                                } else {
-                                    MsgPriority::Low
+                    // 上行路由到逻辑服（快速路径优化）
+                    // 当所有 gRPC 端点不健康时，跳过 spawn 直接本地回显
+                    if !conn_pool.has_healthy_endpoint() {
+                        // 快速降级：本地回显，不创建异步任务
+                        let priority = if is_battle {
+                            MsgPriority::High
+                        } else if (2000..3000).contains(&msg_id) {
+                            MsgPriority::Normal
+                        } else {
+                            MsgPriority::Low
+                        };
+                        if let Some(session) = session_mgr_clone.get_session(session_id) {
+                            if session.is_online() {
+                                let msg = PendingMsg {
+                                    msg_id,
+                                    payload: payload.clone(),
+                                    priority,
                                 };
+                                let _ = session.send(msg);
+                            }
+                        }
+                    } else {
+                        let pool = conn_pool.clone();
+                        let downstream_clone = downstream.clone();
+                        let session_mgr_for_fallback = session_mgr_clone.clone();
+                        let cluster_for_dispatch = cluster_mgr_clone.clone();
+                        tokio::spawn(async move {
+                            let router = crate::grpc_router::upstream::UpstreamRouter::new(pool);
 
-                                // 回显给发送者
-                                if let Some(session) =
-                                    session_mgr_for_fallback.get_session(session_id)
-                                {
-                                    if session.is_online() {
-                                        let msg = PendingMsg {
-                                            msg_id,
-                                            payload: payload.clone(),
-                                            priority,
-                                        };
-                                        let _ = session.send(msg);
+                            match router.route(player_uid, msg_id, payload.clone()).await {
+                                Ok(response) => {
+                                    // 成功收到逻辑服响应，分发下行消息
+                                    for dm in &response.messages {
+                                        dispatch_downstream(
+                                            &downstream_clone,
+                                            dm,
+                                            &session_mgr_for_fallback,
+                                            &cluster_for_dispatch,
+                                            session_id,
+                                        );
+                                    }
+                                }
+                                Err(e) => {
+                                    // 逻辑服不可用，降级为本地回显
+                                    debug!(
+                                        "逻辑服不可用，降级回显: uid={} msg_id={} err={}",
+                                        player_uid, msg_id, e
+                                    );
+
+                                    let priority = if is_battle {
+                                        MsgPriority::High
+                                    } else if (2000..3000).contains(&msg_id) {
+                                        MsgPriority::Normal
+                                    } else {
+                                        MsgPriority::Low
+                                    };
+
+                                    // 回显给发送者
+                                    if let Some(session) =
+                                        session_mgr_for_fallback.get_session(session_id)
+                                    {
+                                        if session.is_online() {
+                                            let msg = PendingMsg {
+                                                msg_id,
+                                                payload: payload.clone(),
+                                                priority,
+                                            };
+                                            let _ = session.send(msg);
+                                        }
                                     }
                                 }
                             }
-                        }
-                    });
+                        });
+                    }
                 }).await;
 
                 match &result {
@@ -233,18 +257,17 @@ pub async fn handle_connection(
                     Err(e) => warn!("ReadLoop 异常退出: session_id={} err={}", session_id, e),
                 }
 
-                // ReadLoop 结束意味着连接断开，通知逻辑服玩家离线
-                let pool_for_offline = conn_pool.clone();
-                let uid_for_offline = player_uid;
-                let cluster_for_offline = cluster_mgr_clone.clone();
-                let session_mgr_for_offline = session_mgr_clone.clone();
-                tokio::spawn(async move {
-                    let router = crate::grpc_router::upstream::UpstreamRouter::new(pool_for_offline);
-                    match router
-                        .notify_player_offline(uid_for_offline, session_id, "连接断开")
-                        .await
-                    {
-                        Ok(messages) => {
+                // ReadLoop 结束意味着连接断开，通知逻辑服玩家离线（仅在 gRPC 可用时）
+                if conn_pool.has_healthy_endpoint() {
+                    let pool_for_offline = conn_pool.clone();
+                    let uid_for_offline = player_uid;
+                    let cluster_for_offline = cluster_mgr_clone.clone();
+                    let session_mgr_for_offline = session_mgr_clone.clone();
+                    tokio::spawn(async move {
+                        let router = crate::grpc_router::upstream::UpstreamRouter::new(pool_for_offline);
+                        if let Ok(messages) = router
+                            .notify_player_offline(uid_for_offline, session_id, "连接断开")
+                            .await {
                             // 分发逻辑服返回的离线消息（如玩家离开广播）
                             let downstream = Arc::new(DownstreamDispatcher::new(session_mgr_for_offline.clone()));
                             for dm in &messages {
@@ -257,17 +280,27 @@ pub async fn handle_connection(
                                 );
                             }
                         }
-                        Err(_) => {}
-                    }
 
-                    // 删除 Redis 路由索引
-                    if let Some(redis_conn) = cluster_for_offline.conn() {
-                        let route_index = RouteIndex::new(cluster_for_offline.redis_url.clone());
-                        if let Err(e) = route_index.remove_route(redis_conn, uid_for_offline).await {
-                            warn!("路由索引删除失败: uid={} err={}", uid_for_offline, e);
+                        // 删除 Redis 路由索引
+                        if let Some(redis_conn) = cluster_for_offline.conn() {
+                            let route_index = RouteIndex::new(cluster_for_offline.redis_url.clone());
+                            if let Err(e) = route_index.remove_route(redis_conn, uid_for_offline).await {
+                                warn!("路由索引删除失败: uid={} err={}", uid_for_offline, e);
+                            }
                         }
-                    }
-                });
+                    });
+                } else {
+                    // gRPC 不可用时仅清理 Redis 路由索引
+                    let cluster_for_offline = cluster_mgr_clone.clone();
+                    tokio::spawn(async move {
+                        if let Some(redis_conn) = cluster_for_offline.conn() {
+                            let route_index = RouteIndex::new(cluster_for_offline.redis_url.clone());
+                            if let Err(e) = route_index.remove_route(redis_conn, player_uid).await {
+                                warn!("路由索引删除失败: uid={} err={}", player_uid, e);
+                            }
+                        }
+                    });
+                }
 
                 // 清理会话
                 session_mgr_clone.remove_session(session_id);
@@ -278,7 +311,7 @@ pub async fn handle_connection(
             // 等待任一循环结束即断开连接
             tokio::select! {
                 _ = write_handle => {
-                    warn!("WriteLoop 结束，断开连接: session_id={}", session_id);
+                    debug!("WriteLoop 结束，断开连接: session_id={}", session_id);
                 }
                 _ = read_handle => {
                     // ReadLoop 结束已自行清理会话
@@ -418,7 +451,7 @@ fn validate_token(token: &str, timestamp: u64) -> Result<(), GateError> {
 fn dispatch_downstream(
     dispatcher: &Arc<DownstreamDispatcher>,
     msg: &DownstreamMessage,
-    session_mgr: &Arc<SessionManager>,
+    _session_mgr: &Arc<SessionManager>,
     cluster_mgr: &Arc<ClusterManager>,
     _sender_session_id: u64,
 ) {

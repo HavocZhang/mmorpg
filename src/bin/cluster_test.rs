@@ -10,7 +10,7 @@
 //!   cargo run --release --bin cluster_test
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use aes_gcm::{aead::{Aead, AeadCore, KeyInit, OsRng}, Aes256Gcm};
@@ -21,7 +21,9 @@ use tokio::net::TcpStream;
 const HEADER_SIZE: usize = 16;
 const MAGIC: [u8; 2] = [0x4d, 0x4d];
 const PROTOCOL_VERSION: u8 = 1;
+#[allow(dead_code)]
 const MAX_BODY_SIZE: usize = 8192;
+#[allow(dead_code)]
 const MSG_QUERY: u16 = 4001;
 const MSG_HANDSHAKE: u16 = 0x0001;
 const AES_KEY_HEX: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";

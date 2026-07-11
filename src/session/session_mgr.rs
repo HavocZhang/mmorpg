@@ -15,7 +15,7 @@ use tracing::{debug, info, warn};
 
 use crate::foundation::metric;
 use crate::foundation::snowflake::SnowflakeIdGen;
-use crate::session::session_struct::{PendingMsg, Session, SessionState};
+use crate::session::session_struct::{PendingMsg, Session};
 
 /// 会话管理器（无锁双映射）
 pub struct SessionManager {
@@ -157,7 +157,7 @@ impl SessionManager {
         }
 
         for session_id in to_remove {
-            warn!("僵尸连接清理: session_id={}", session_id);
+            debug!("僵尸连接清理: session_id={}", session_id);
             self.kick_session(session_id, "心跳超时").await;
         }
     }
@@ -184,7 +184,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_and_get_session() {
         let mgr = SessionManager::new();
-        let addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
+        let _addr: SocketAddr = "127.0.0.1:12345".parse().unwrap();
 
         // 测试空管理器
         assert_eq!(mgr.online_count(), 0);

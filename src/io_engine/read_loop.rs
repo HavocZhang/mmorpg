@@ -66,7 +66,6 @@ use tokio::io::AsyncReadExt;
 mod tests {
     use super::*;
     use crate::crypto::aes_gcm::AesGcmCipher;
-    use crate::protocol::encoder::PacketEncoder;
 
     const TEST_KEY: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
 
@@ -74,7 +73,7 @@ mod tests {
     fn test_readloop_struct() {
         // 结构体创建测试（需要真实TCP连接才能完整测试）
         let cipher = AesGcmCipher::from_hex_key(TEST_KEY).unwrap();
-        let decoder = PacketDecoder::new(cipher);
+        let _decoder = PacketDecoder::new(cipher);
         // ReadLoop::new 需要 OwnedReadHalf，这里只验证类型存在
     }
 }

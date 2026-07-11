@@ -46,11 +46,9 @@
 //!     9002: 实体列表        {"npcs":[...],"mobs":[...]}
 
 use std::net::SocketAddr;
-use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use serde_json::Value;
-use tokio::time::interval;
 use tonic::{transport::Server, Request, Response, Status};
 
 use rust_mmo_gate::grpc_router::proto::gate::{
@@ -134,6 +132,7 @@ struct ItemDef {
     id: u32,
     name: &'static str,
     item_type: &'static str, // "weapon", "armor", "accessory", "potion", "material"
+    #[allow(dead_code)]
     value: u32,
     icon: &'static str,
     hp_restore: i32,
@@ -465,10 +464,12 @@ struct MobEntity {
 #[derive(Debug, Clone, PartialEq)]
 enum MobState {
     Idle,
+    #[allow(dead_code)]
     Patrolling,
     Chasing,
     Attacking,
     Dead,
+    #[allow(dead_code)]
     Respawning,
 }
 
@@ -1022,7 +1023,7 @@ impl MockLogicService {
         let player_atk = player.total_atk();
         let player_x = player.x;
         let player_y = player.y;
-        let player_level = player.level;
+        let _player_level = player.level;
         drop(player);
 
         // 更新技能冷却信息
@@ -1145,7 +1146,7 @@ impl MockLogicService {
 
                 // 给击杀者加经验
                 if let Some(mut p) = self.players.get_mut(&uid) {
-                    let old_level = p.level;
+                    let _old_level = p.level;
                     let leveled_up = p.add_exp(mob_exp);
 
                     // 更新任务进度
@@ -1456,7 +1457,7 @@ impl MockLogicService {
             p.quests.retain(|(qid, _)| *qid != quest_id);
 
             // 经验奖励
-            let old_level = p.level;
+            let _old_level = p.level;
             let leveled_up = p.add_exp(def.exp_reward);
 
             // 物品奖励

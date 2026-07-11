@@ -4,10 +4,8 @@
 
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
 use std::time::Instant;
 
-use tokio::net::tcp::OwnedWriteHalf;
 use tokio::sync::mpsc;
 
 use crate::protocol::packet_struct::MsgId;
@@ -149,6 +147,7 @@ impl std::fmt::Debug for Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     fn create_test_session() -> (Arc<Session>, mpsc::UnboundedReceiver<PendingMsg>) {
         let (tx, rx) = mpsc::unbounded_channel();

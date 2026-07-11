@@ -10,8 +10,8 @@
 use std::sync::OnceLock;
 
 use prometheus::{
-    register_int_counter, register_int_counter_vec, register_int_gauge, register_int_gauge_vec,
-    register_histogram, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, Histogram, Opts, Registry,
+    register_int_counter, register_int_counter_vec, register_int_gauge,
+    register_histogram, IntCounter, IntCounterVec, IntGauge, Histogram, Opts, Registry,
 };
 
 /// 全局 Prometheus Registry（单例）
@@ -22,7 +22,7 @@ static METRICS: OnceLock<GateMetrics> = OnceLock::new();
 
 /// 获取全局 Registry
 pub fn registry() -> &'static Registry {
-    REGISTRY.get_or_init(|| Registry::new())
+    REGISTRY.get_or_init(Registry::new)
 }
 
 /// 获取全局指标集合

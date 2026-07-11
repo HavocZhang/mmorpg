@@ -24,7 +24,7 @@ use rust_mmo_gate::grpc_router::proto::gate::{
     DownstreamMessage, ForwardBatchRequest, ForwardRequest, ForwardResponse,
     PlayerOfflineRequest, PlayerOfflineResponse, PlayerOnlineRequest, PlayerOnlineResponse,
 };
-use rust_mmo_gate::scene::SceneManager;
+use logic_lib::scene::SceneManager;
 
 pub struct SceneService {
     manager: Arc<RwLock<SceneManager>>,
@@ -112,7 +112,7 @@ impl SceneService {
                 let result = serde_json::json!({"success":true,"mapName":map_name,"x":x,"y":y}).to_string();
                 vec![dm(uid, 8100, result, 2)]
             }
-            Err(e) => vec![err(uid, 8100, &e)],
+            Err(e) => vec![err(uid, 8100, &e.to_string())],
         }
     }
 
@@ -137,7 +137,7 @@ impl SceneService {
                 }
                 vec![dm(uid, 8001, pos_json, 1)]
             }
-            Err(e) => vec![err(uid, 8100, &e)],
+            Err(e) => vec![err(uid, 8100, &e.to_string())],
         }
     }
 
@@ -156,7 +156,7 @@ impl SceneService {
                 let result = serde_json::json!({"players":players}).to_string();
                 vec![dm(uid, 9001, result, 0)]
             }
-            Err(e) => vec![err(uid, 9001, &e)],
+            Err(e) => vec![err(uid, 9001, &e.to_string())],
         }
     }
 

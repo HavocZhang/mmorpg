@@ -1,9 +1,10 @@
 # 全局编译配置
-# 注意：不在 [build] 中设置 rustflags，因为会影响 build scripts 编译
-# 性能优化通过 Cargo.toml 的 [profile.release] 实现
+# 性能优化：Cargo.toml [profile.release] 负责 opt-level/lto/codegen-units
+# rustflags 仅设置 native CPU 特性（不影响 build scripts）
 
 [target.x86_64-pc-windows-msvc]
-# Windows 平台无需特殊 linker 配置
+rustflags = ["-C", "target-cpu=native"]
 
 [target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "target-cpu=native"]
 linker = "gcc"

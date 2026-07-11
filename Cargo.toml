@@ -40,6 +40,7 @@ hex = "0.4"
 # 序列化（跨网关轻量化传输）
 rmp-serde = "1.3"
 prost = "0.13"
+bytes = "1.11"
 tonic = "0.12"
 
 # Redis集群（服务发现、跨网关消息、路由索引）
@@ -59,7 +60,6 @@ anyhow = "1.0"
 thiserror = "2.0"
 futures-util = "0.3"
 uuid = { version = "1.11", features = ["v4"] }
-bytes = "=1.7.2"
 base64 = "0.22"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -86,6 +86,7 @@ tokio-test = "0.4"
 rand = "0.8"
 criterion = { version = "0.5", features = ["html_reports"] }
 cucumber = "0.21"
+proptest = "1.5"
 
 [[test]]
 name = "bdd"
@@ -99,9 +100,43 @@ path = "tests/tdd_concurrent/concurrency_tests.rs"
 name = "tdd_protocol"
 path = "tests/tdd_unit/protocol_tests.rs"
 
+# scene/chat/combat 测试已迁移至 logic-lib
+
 [[test]]
-name = "tdd_scene"
-path = "tests/tdd_unit/scene_tests.rs"
+name = "tdd_config"
+path = "tests/tdd_unit/config_tests.rs"
+
+[[test]]
+name = "tdd_crypto"
+path = "tests/tdd_unit/crypto_tests.rs"
+
+[[test]]
+name = "tdd_network"
+path = "tests/tdd_unit/network_tests.rs"
+
+[[test]]
+name = "tdd_session"
+path = "tests/tdd_unit/session_tests.rs"
+
+[[test]]
+name = "tdd_io_engine"
+path = "tests/tdd_unit/io_engine_tests.rs"
+
+[[test]]
+name = "tdd_grpc_router"
+path = "tests/tdd_unit/grpc_router_tests.rs"
+
+[[test]]
+name = "tdd_cluster"
+path = "tests/tdd_unit/cluster_tests.rs"
+
+[[test]]
+name = "tdd_security"
+path = "tests/tdd_unit/security_tests.rs"
+
+[[test]]
+name = "tdd_admin"
+path = "tests/tdd_unit/admin_tests.rs"
 
 [[test]]
 name = "tdd_exception"
@@ -111,10 +146,8 @@ path = "tests/tdd_exception/exception_tests.rs"
 name = "tdd_fuzz"
 path = "tests/tdd_fuzz/fuzz_tests.rs"
 
-# Mock 逻辑服二进制
-[[bin]]
-name = "logic-server"
-path = "src/bin/logic_server.rs"
+# Mock 逻辑服二进制（已迁移至 logic-lib）
+# [[bin]] logic-server, scene-server, chat-server, combat-server 已迁移
 
 # 登录服二进制
 [[bin]]
@@ -130,11 +163,6 @@ path = "src/bin/login_test.rs"
 [[bin]]
 name = "e2e-login-test"
 path = "src/bin/e2e_login_test.rs"
-
-# 场景服二进制
-[[bin]]
-name = "scene-server"
-path = "src/bin/scene_server.rs"
 
 # 性能压测入口配置
 [[bench]]

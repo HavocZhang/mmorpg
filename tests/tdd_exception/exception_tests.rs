@@ -6,7 +6,7 @@ use rust_mmo_gate::crypto::aes_gcm::AesGcmCipher;
 use rust_mmo_gate::foundation::GateError;
 use rust_mmo_gate::protocol::decoder::PacketDecoder;
 use rust_mmo_gate::protocol::encoder::PacketEncoder;
-use rust_mmo_gate::protocol::packet_struct::{HEADER_SIZE, MAX_BODY_SIZE};
+use rust_mmo_gate::protocol::packet_struct::HEADER_SIZE;
 
 const TEST_KEY: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
 

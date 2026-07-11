@@ -3,7 +3,7 @@
 //! 连接与握手鉴权场景
 
 use cucumber::{given, then, when};
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 
 use super::super::BddWorld;
 use rust_mmo_gate::security::ip_blacklist::IpBlacklist;

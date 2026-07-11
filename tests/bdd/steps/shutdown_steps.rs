@@ -118,13 +118,13 @@ async fn when_process_crash(world: &mut BddWorld) {
 }
 
 #[then("Redis中的会话缓存数据应不受影响")]
-async fn then_redis_cache_intact(world: &mut BddWorld) {
+async fn then_redis_cache_intact(_world: &mut BddWorld) {
     // Redis 数据独立于进程，不受影响
     assert!(true);
 }
 
 #[then("其他网关节点应正常工作")]
-async fn then_other_nodes_ok(world: &mut BddWorld) {
+async fn then_other_nodes_ok(_world: &mut BddWorld) {
     // 其他节点不受影响
     assert!(true);
 }
@@ -146,7 +146,7 @@ async fn then_removed_after_10s(world: &mut BddWorld, name: String) {
 
 #[then("玩家重连应分配到其他健康网关")]
 async fn then_reconnect_healthy(world: &mut BddWorld) {
-    let alive_count = world.registered_nodes.values().filter(|n| n.alive).count();
+    let _alive_count = world.registered_nodes.values().filter(|n| n.alive).count();
     // 即使没有其他节点，该行为逻辑应正确
     assert!(true, "重连分配逻辑应正确");
 }
@@ -240,32 +240,32 @@ async fn given_process_start(world: &mut BddWorld) {
 }
 
 #[when("配置加载完成")]
-async fn when_config_loaded(world: &mut BddWorld) {
+async fn when_config_loaded(_world: &mut BddWorld) {
     // 配置加载
 }
 
 #[when("日志系统初始化完成")]
-async fn when_logger_init(world: &mut BddWorld) {
+async fn when_logger_init(_world: &mut BddWorld) {
     // 日志初始化
 }
 
 #[when("会话管理器初始化完成")]
-async fn when_session_mgr_init(world: &mut BddWorld) {
+async fn when_session_mgr_init(_world: &mut BddWorld) {
     // 会话管理器初始化
 }
 
 #[when("安全模块初始化完成")]
-async fn when_security_init(world: &mut BddWorld) {
+async fn when_security_init(_world: &mut BddWorld) {
     // 安全模块初始化
 }
 
 #[when("集群注册完成")]
-async fn when_cluster_registered(world: &mut BddWorld) {
+async fn when_cluster_registered(_world: &mut BddWorld) {
     // 集群注册
 }
 
 #[when("gRPC连接池建立完成")]
-async fn when_grpc_pool_ready(world: &mut BddWorld) {
+async fn when_grpc_pool_ready(_world: &mut BddWorld) {
     // gRPC 连接池建立
 }
 

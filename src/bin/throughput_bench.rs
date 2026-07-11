@@ -104,11 +104,11 @@ fn parse_args() -> Args {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--connections" => { if i + 1 < args.len() { a.connections = args[i + 1].parse().unwrap_or(100); i += 1; } }
-            "--target-rate" => { if i + 1 < args.len() { a.target_rate = args[i + 1].parse().unwrap_or(80000); i += 1; } }
-            "--duration" => { if i + 1 < args.len() { a.duration_sec = args[i + 1].parse().unwrap_or(30); i += 1; } }
-            "--host" => { if i + 1 < args.len() { a.host = args[i + 1].clone(); i += 1; } }
-            "--port" => { if i + 1 < args.len() { a.port = args[i + 1].parse().unwrap_or(7888); i += 1; } }
+            "--connections" if i + 1 < args.len() => { a.connections = args[i + 1].parse().unwrap_or(100); i += 1; }
+            "--target-rate" if i + 1 < args.len() => { a.target_rate = args[i + 1].parse().unwrap_or(80000); i += 1; }
+            "--duration" if i + 1 < args.len() => { a.duration_sec = args[i + 1].parse().unwrap_or(30); i += 1; }
+            "--host" if i + 1 < args.len() => { a.host = args[i + 1].clone(); i += 1; }
+            "--port" if i + 1 < args.len() => { a.port = args[i + 1].parse().unwrap_or(7888); i += 1; }
             _ => {}
         }
         i += 1;
@@ -166,6 +166,7 @@ async fn main() {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!("  Connect failed uid={}: {}", uid, e);
+                    barrier.wait().await; // 仍需参与 barrier 避免死锁
                     return;
                 }
             };
@@ -173,7 +174,10 @@ async fn main() {
 
             // Send handshake
             let hs = build_handshake(uid, &cipher);
-            stream.write_all(&hs).await.ok();
+            if stream.write_all(&hs).await.is_err() {
+                barrier.wait().await;
+                return;
+            }
 
             // Wait for all to connect
             barrier.wait().await;

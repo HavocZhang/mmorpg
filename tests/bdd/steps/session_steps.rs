@@ -3,7 +3,6 @@
 //! 会话 Session 管理场景
 
 use cucumber::{given, then, when};
-use std::time::Instant;
 
 use super::super::BddWorld;
 
@@ -275,7 +274,7 @@ async fn then_removed_from_uid_map(world: &mut BddWorld, uid: String) {
 
 #[then("TCP文件描述符应释放")]
 async fn then_fd_released(world: &mut BddWorld) {
-    let all_closed = world.sessions.values().all(|s| s.closed);
+    let _all_closed = world.sessions.values().all(|s| s.closed);
     // 至少有一个被关闭
     let has_closed = world.sessions.values().any(|s| s.closed);
     assert!(has_closed, "TCP文件描述符应释放");
@@ -283,7 +282,7 @@ async fn then_fd_released(world: &mut BddWorld) {
 
 #[then("在线连接计数应减一")]
 async fn then_online_count_dec(world: &mut BddWorld) {
-    let online = world.sessions.values().filter(|s| !s.closed).count();
+    let _online = world.sessions.values().filter(|s| !s.closed).count();
     let closed = world.sessions.values().filter(|s| s.closed).count();
     assert!(closed > 0, "应有会话被关闭，在线计数应减一");
 }

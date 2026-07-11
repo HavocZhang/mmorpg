@@ -37,7 +37,7 @@ impl DownstreamDispatcher {
         let session = self
             .session_mgr
             .get_session_by_uid(player_uid)
-            .ok_or_else(|| GateError::SessionNotFound(player_uid))?;
+            .ok_or(GateError::SessionNotFound(player_uid))?;
 
         if !session.is_online() {
             warn!("玩家不在线 uid={}", player_uid);
@@ -96,5 +96,16 @@ impl DownstreamDispatcher {
         }
 
         debug!("广播完成: {} 个会话", count);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_downstream_dispatcher_priority_mapping() {
+        assert!(MsgPriority::High > MsgPriority::Normal);
+        assert!(MsgPriority::Normal > MsgPriority::Low);
     }
 }

@@ -24,7 +24,7 @@ type ChannelCache = dashmap::DashMap<String, Channel>;
 static CHANNEL_CACHE: std::sync::OnceLock<ChannelCache> = std::sync::OnceLock::new();
 
 fn get_channel_cache() -> &'static ChannelCache {
-    CHANNEL_CACHE.get_or_init(|| dashmap::DashMap::new())
+    CHANNEL_CACHE.get_or_init(dashmap::DashMap::new)
 }
 
 /// 将 gRPC 端点 URL 转换为 tonic 可用的 URL
@@ -271,5 +271,25 @@ impl UpstreamRouter {
                 Ok(vec![])
             }
         }
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_grpc_url_normalization() {
+        assert_eq!(normalize_endpoint("grpc://127.0.0.1:50051"), "http://127.0.0.1:50051");
+        assert_eq!(normalize_endpoint("http://127.0.0.1:50051"), "http://127.0.0.1:50051");
+        assert_eq!(normalize_endpoint("127.0.0.1:50051"), "http://127.0.0.1:50051");
+    }
+
+    #[test]
+    fn test_upstream_router_creation() {
+        // 验证 UpstreamRouter 可正常创建（需要 GrpcConnPool）
+        let pool = Arc::new(GrpcConnPool::new(vec!["grpc://127.0.0.1:50051".into()]));
+        let _router = UpstreamRouter::new(pool);
     }
 }

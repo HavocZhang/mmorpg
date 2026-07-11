@@ -9,4 +9,6 @@ pub mod message_steps;
 pub mod security_steps;
 pub mod cluster_steps;
 pub mod scene_steps;
+pub mod chat_steps;
 pub mod shutdown_steps;
+pub mod combat_steps;

@@ -1,0 +1,54 @@
+[package]
+name = "logic-lib"
+version = "0.1.0"
+edition = "2021"
+description = "MMO 游戏逻辑库 — 场景AOI、聊天、战斗系统（独立于网关）"
+publish = false
+
+[dependencies]
+# 依赖网关 crate 获取 gRPC proto 类型和基础工具
+rust-mmo-gate = { path = ".." }
+
+# 基础工具
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+dashmap = "6"
+parking_lot = "0.12"
+rand = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+tonic = "0.12"
+
+[dev-dependencies]
+
+# Mock 逻辑服二进制（完整 MMORPG）
+[[bin]]
+name = "logic-server"
+path = "src/bin/logic_server.rs"
+
+# 场景服二进制
+[[bin]]
+name = "scene-server"
+path = "src/bin/scene_server.rs"
+
+# 聊天服二进制
+[[bin]]
+name = "chat-server"
+path = "src/bin/chat_server.rs"
+
+# 战斗服二进制
+[[bin]]
+name = "combat-server"
+path = "src/bin/combat_server.rs"
+
+# TDD 测试
+[[test]]
+name = "tdd_scene"
+path = "tests/tdd_unit/scene_tests.rs"
+
+[[test]]
+name = "tdd_chat"
+path = "tests/tdd_unit/chat_tests.rs"
+
+[[test]]
+name = "tdd_combat"
+path = "tests/tdd_unit/combat_tests.rs"

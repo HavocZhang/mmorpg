@@ -43,6 +43,7 @@ pub fn merge_stats() -> (u64, u64, f64) {
 ///        recent_bytes_per_sec)
 ///
 /// 近实时值基于上次调用到现在的差值，适合 Prometheus 定期抓取
+#[allow(clippy::manual_checked_ops)]
 pub fn merge_stats_with_recent() -> MergeStatsSnapshot {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

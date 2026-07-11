@@ -376,7 +376,7 @@ impl LoginService {
 
         let chars_json: Vec<Value> = chars
             .iter()
-            .map(|c| char_to_json_value(c))
+            .map(char_to_json_value)
             .collect();
 
         let result = serde_json::json!({
@@ -498,7 +498,7 @@ impl LoginService {
             .map(|c| c.clone())
             .unwrap_or_default();
 
-        let chars_json: Vec<Value> = chars.iter().map(|c| char_to_json_value(c)).collect();
+        let chars_json: Vec<Value> = chars.iter().map(char_to_json_value).collect();
 
         let result = serde_json::json!({
             "success": true,

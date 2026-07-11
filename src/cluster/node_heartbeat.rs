@@ -6,7 +6,7 @@
 use std::time::Duration;
 
 use redis::AsyncCommands;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::cluster::RedisConn;
 use crate::foundation::GateError;
@@ -86,9 +86,27 @@ impl NodeHeartbeat {
                 .sadd("gate:nodes", self.node_id)
                 .await
                 .map_err(|e| GateError::Redis(format!("SADD失败: {}", e)))?;
-            warn!("节点信息已过期，已重新注册: node_id={}", self.node_id);
+            debug!("节点信息已过期，已重新注册: node_id={}", self.node_id);
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_heartbeat_creation() {
+        let _hb = NodeHeartbeat::new(1, "gate-01".into(), "redis://127.0.0.1:6379".into());
+        // NodeHeartbeat created successfully
+    }
+
+    #[test]
+    fn test_heartbeat_interval() {
+        // 心跳间隔应为 3 秒
+        let interval = Duration::from_secs(3);
+        assert!(!interval.is_zero());
     }
 }

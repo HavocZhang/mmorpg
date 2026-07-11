@@ -93,11 +93,8 @@ impl PacketDecoder {
     /// 尝试连续解码多个包（处理粘包）
     pub fn decode_all(&mut self) -> Result<Vec<(Packet, Vec<u8>)>, GateError> {
         let mut packets = vec![];
-        loop {
-            match self.decode()? {
-                Some(pkt) => packets.push(pkt),
-                None => break,
-            }
+        while let Some(pkt) = self.decode()? {
+            packets.push(pkt);
         }
         Ok(packets)
     }

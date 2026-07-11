@@ -31,7 +31,7 @@ fn test_encode_decode_roundtrip() {
 
 #[test]
 fn test_header_magic() {
-    let (encoder, mut decoder) = create_encoder_decoder();
+    let (encoder, _decoder) = create_encoder_decoder();
     let bytes = encoder.encode_to_bytes(0x0001, b"test").unwrap();
     assert_eq!(&bytes[0..2], &MAGIC);
 }
