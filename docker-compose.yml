@@ -8,6 +8,28 @@
 version: "3.8"
 
 services:
+  # ---------- PostgreSQL ----------
+  postgres:
+    image: postgres:16-alpine
+    container_name: mmo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mmorpg
+      POSTGRES_USER: mmo
+      POSTGRES_PASSWORD: mmo_dev_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./deploy/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - mmo-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mmo -d mmorpg"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   # ---------- Redis ----------
   redis:
     image: redis:7-alpine
@@ -81,9 +103,8 @@ services:
 
 volumes:
   redis-data:
-    driver: local
+  pg-data:
   gateway-logs:
-    driver: local
 
 networks:
   mmo-net:

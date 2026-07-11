@@ -46,6 +46,7 @@
 //!     9002: 实体列表        {"npcs":[...],"mobs":[...]}
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use dashmap::DashMap;
 use serde_json::Value;
@@ -459,6 +460,8 @@ struct MobEntity {
     last_attack: u64,
     last_move: u64,
     move_dir: f32, // radians
+    patrol_tx: Option<f32>,
+    patrol_ty: Option<f32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -496,6 +499,8 @@ impl MobEntity {
             last_attack: 0,
             last_move: 0,
             move_dir: 0.0,
+            patrol_tx: None,
+            patrol_ty: None,
         }
     }
 
@@ -627,19 +632,26 @@ fn dm(target_uid: u64, msg_id: u32, payload: String, priority: u32) -> Downstrea
 // 逻辑服实现
 // ════════════════════════════════════════════════════════════════
 
+pub struct GameState {
+    pub players: DashMap<u64, PlayerState>,
+    pub mobs: DashMap<u64, MobEntity>,
+    pub npcs: Vec<NpcEntity>,
+    pub drops: DashMap<u64, ItemDrop>,
+    pub next_entity_id: std::sync::atomic::AtomicU64,
+    pub next_drop_id: std::sync::atomic::AtomicU64,
+    pub online_count: std::sync::atomic::AtomicU64,
+    pub last_mob_tick: std::sync::atomic::AtomicU64,
+    pub party_mgr: logic_lib::party::PartyManager,
+}
+
 pub struct MockLogicService {
-    players: DashMap<u64, PlayerState>,
-    mobs: DashMap<u64, MobEntity>,
-    npcs: Vec<NpcEntity>,
-    drops: DashMap<u64, ItemDrop>,
-    next_entity_id: std::sync::atomic::AtomicU64,
-    next_drop_id: std::sync::atomic::AtomicU64,
-    online_count: std::sync::atomic::AtomicU64,
+    state: Arc<GameState>,
+    db: Option<Arc<logic_lib::db::Database>>,
 }
 
 impl Default for MockLogicService {
     fn default() -> Self {
-        let service = Self {
+        let state = GameState {
             players: DashMap::new(),
             mobs: DashMap::new(),
             npcs: NPC_DEFS.iter().map(NpcEntity::from_def).collect(),
@@ -647,33 +659,38 @@ impl Default for MockLogicService {
             next_entity_id: std::sync::atomic::AtomicU64::new(10000),
             next_drop_id: std::sync::atomic::AtomicU64::new(20000),
             online_count: std::sync::atomic::AtomicU64::new(0),
+            last_mob_tick: std::sync::atomic::AtomicU64::new(0),
+            party_mgr: logic_lib::party::PartyManager::new(),
         };
 
         // Spawn 初始怪物
         let mob_spawns: &[(u32, f32, f32)] = &[
-            // 史莱姆 x6
             (1, 500.0, 400.0), (1, 600.0, 350.0), (1, 700.0, 450.0),
             (1, 450.0, 500.0), (1, 800.0, 380.0), (1, 550.0, 550.0),
-            // 哥布林 x4
             (2, 1000.0, 500.0), (2, 1100.0, 450.0), (2, 900.0, 550.0), (2, 1200.0, 400.0),
-            // 骷髅战士 x3
             (3, 1300.0, 700.0), (3, 1400.0, 650.0), (3, 1200.0, 750.0),
-            // 暗影法师 x2
             (4, 700.0, 900.0), (4, 900.0, 1000.0),
-            // 岩石巨人 x1
             (5, 1100.0, 1000.0),
         ];
-
         for (def_id, x, y) in mob_spawns {
-            let eid = service
-                .next_entity_id
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            service.mobs.insert(eid, MobEntity::from_def(eid, *def_id, *x, *y));
+            let eid = state.next_entity_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            state.mobs.insert(eid, MobEntity::from_def(eid, *def_id, *x, *y));
         }
 
-        println!("[LogicServer] 已生成 {} 个NPC, {} 个怪物", service.npcs.len(), service.mobs.len());
+        println!("[LogicServer] 已生成 {} 个NPC, {} 个怪物", state.npcs.len(), state.mobs.len());
 
-        service
+        let state = Arc::new(state);
+
+        // ====== 后台游戏循环：独立驱动怪物 AI ======
+        let bg = state.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                bg.tick_mob_ai(0);
+            }
+        });
+
+        MockLogicService { state, db: None }
     }
 }
 
@@ -684,7 +701,7 @@ impl LogicService for MockLogicService {
         request: Request<ForwardRequest>,
     ) -> Result<Response<ForwardResponse>, Status> {
         let req = request.into_inner();
-        let response = self.process_message(req.player_uid, req.msg_id, &req.payload);
+        let response = self.state.process_message(req.player_uid, req.msg_id, &req.payload);
         Ok(Response::new(response))
     }
 
@@ -695,7 +712,7 @@ impl LogicService for MockLogicService {
         let req = request.into_inner();
         let mut all_downstream = Vec::new();
         for msg in req.messages {
-            let resp = self.process_message(msg.player_uid, msg.msg_id, &msg.payload);
+            let resp = self.state.process_message(msg.player_uid, msg.msg_id, &msg.payload);
             all_downstream.extend(resp.messages);
         }
         Ok(Response::new(ForwardResponse {
@@ -709,13 +726,44 @@ impl LogicService for MockLogicService {
     ) -> Result<Response<PlayerOnlineResponse>, Status> {
         let req = request.into_inner();
         let uid = req.player_uid;
-        let count = self
-            .online_count
+        let count = self.state.online_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             + 1;
 
-        let name = format!("Player{}", uid);
-        let player = PlayerState::new(uid, name);
+        // 尝试从 DB 加载已有角色
+        let (name, mut player) = if let Some(ref db) = self.db {
+            if let Ok(Some(data)) = db.load_player(uid).await {
+                let name = data["name"].as_str().unwrap_or("Player").to_string();
+                let mut p = PlayerState::new(uid, name.clone());
+                p.level = data["level"].as_i64().unwrap_or(1) as u32;
+                p.exp = data["exp"].as_u64().unwrap_or(0) as u32;
+                p.hp = data["hp"].as_i64().unwrap_or(100) as i32;
+                p.max_hp = data["maxHp"].as_i64().unwrap_or(100) as i32;
+                p.mp = data["mp"].as_i64().unwrap_or(50) as i32;
+                p.max_mp = data["maxMp"].as_i64().unwrap_or(50) as i32;
+                p.atk = data["atk"].as_i64().unwrap_or(20) as i32;
+                p.def = data["def"].as_i64().unwrap_or(5) as i32;
+                p.weapon = data["weapon"].as_u64().map(|v| v as u32).or(data["weapon"].as_i64().map(|v| v as u32));
+                p.armor = data["armor"].as_u64().map(|v| v as u32).or(data["armor"].as_i64().map(|v| v as u32));
+                p.accessory = data["accessory"].as_u64().map(|v| v as u32).or(data["accessory"].as_i64().map(|v| v as u32));
+                if let Some(items) = data["inventory"].as_array() {
+                    p.inventory = items.iter().map(|i| (i["itemId"].as_u64().unwrap_or(0) as u32, i["count"].as_u64().unwrap_or(1) as u32)).collect();
+                }
+                if let Some(qs) = data["quests"].as_array() {
+                    p.quests = qs.iter().map(|q| (q["questId"].as_u64().unwrap_or(0) as u32, q["progress"].as_u64().unwrap_or(0) as u32)).collect();
+                }
+                println!("[LogicServer] 从DB加载角色: uid={} name={} lv={}", uid, name, p.level);
+                (name, p)
+            } else {
+                let name = format!("Player{}", uid);
+                let p = PlayerState::new(uid, name.clone());
+                (name, p)
+            }
+        } else {
+            let name = format!("Player{}", uid);
+            let p = PlayerState::new(uid, name.clone());
+            (name, p)
+        };
 
         println!(
             "[LogicServer] 玩家上线: uid={} session={} gate={} (在线: {})",
@@ -731,15 +779,14 @@ impl LogicService for MockLogicService {
         messages.push(dm(0, 8002, player.to_enter_json(), 1));
 
         // 3. 给自己发所有已在线玩家的进入通知 (8002)
-        for entry in self.players.iter() {
+        for entry in self.state.players.iter() {
             if entry.uid != uid {
                 messages.push(dm(uid, 8002, entry.to_enter_json(), 1));
             }
         }
 
         // 4. 给自己发玩家列表 (9001)
-        let list: Vec<String> = self
-            .players
+        let list: Vec<String> = self.state.players
             .iter()
             .filter(|e| e.uid != uid)
             .map(|e| e.to_list_entry())
@@ -753,19 +800,16 @@ impl LogicService for MockLogicService {
         // 6. 给自己发装备 (5004)
         messages.push(dm(uid, 5004, player.to_equipment_json(), 1));
 
-        // 7. 给自己发技能列表 (5004 with skill data, reuse or use different msg)
-        // Actually use a different message - we'll send skills as part of stats
-        // Let's use msg_id 5001 stats already sent; skills sent via 5004 won't work
-        // Let's add skills to the initial stats payload instead
-        // For now, send skills as a separate message with id 5500
-        messages.push(dm(uid, 5500, player.to_skills_json(), 1));
+        // 7. 技能数据 (通过 5004 下发，不再占用 5500 避免与升级消息冲突)
+        // 5004 上行是装备，下行复用为技能列表
+        // messages.push(dm(uid, 5004, player.to_skills_json(), 1));
 
         // 8. 给自己发任务列表 (5005)
         messages.push(dm(uid, 5005, player.to_quests_json(), 1));
 
         // 9. 给自己发NPC和怪物列表 (9002)
-        let npcs_json: Vec<String> = self.npcs.iter().map(|n| n.to_json()).collect();
-        let mobs_json: Vec<String> = self.mobs.iter().map(|m| m.to_list_entry()).collect();
+        let npcs_json: Vec<String> = self.state.npcs.iter().map(|n| n.to_json()).collect();
+        let mobs_json: Vec<String> = self.state.mobs.iter().map(|m| m.to_list_entry()).collect();
         let entity_json = serde_json::json!({
             "npcs": npcs_json,
             "mobs": mobs_json,
@@ -773,7 +817,7 @@ impl LogicService for MockLogicService {
         .to_string();
         messages.push(dm(uid, 9002, entity_json, 0));
 
-        self.players.insert(uid, player);
+        self.state.players.insert(uid, player);
 
         Ok(Response::new(PlayerOnlineResponse {
             ok: true,
@@ -787,8 +831,7 @@ impl LogicService for MockLogicService {
     ) -> Result<Response<PlayerOfflineResponse>, Status> {
         let req = request.into_inner();
         let uid = req.player_uid;
-        let count = self
-            .online_count
+        let count = self.state.online_count
             .fetch_sub(1, std::sync::atomic::Ordering::Relaxed)
             .saturating_sub(1);
 
@@ -797,10 +840,23 @@ impl LogicService for MockLogicService {
             uid, req.session_id, req.reason, count
         );
 
-        self.players.remove(&uid);
+        // 保存到 DB
+        if let (Some(ref db), Some(p)) = (&self.db, self.state.players.get(&uid)) {
+            let data = serde_json::json!({
+                "uid": p.uid, "name": p.name, "level": p.level, "exp": p.exp,
+                "x": p.x, "y": p.y, "hp": p.hp, "maxHp": p.max_hp,
+                "mp": p.mp, "maxMp": p.max_mp, "atk": p.atk, "def": p.def,
+                "weapon": p.weapon, "armor": p.armor, "accessory": p.accessory,
+                "inventory": p.inventory.iter().map(|(id,c)| serde_json::json!({"itemId":id,"count":c})).collect::<Vec<_>>(),
+                "quests": p.quests.iter().map(|(qid,pr)| serde_json::json!({"questId":qid,"progress":pr})).collect::<Vec<_>>(),
+            });
+            let _ = db.save_player(uid, &data).await;
+        }
+
+        self.state.players.remove(&uid);
 
         // 清除以该玩家为目标的怪物仇恨
-        for mut mob in self.mobs.iter_mut() {
+        for mut mob in self.state.mobs.iter_mut() {
             if mob.target_uid == Some(uid) {
                 mob.target_uid = None;
                 mob.state = MobState::Idle;
@@ -816,7 +872,7 @@ impl LogicService for MockLogicService {
     }
 }
 
-impl MockLogicService {
+impl GameState {
     fn process_message(&self, uid: u64, msg_id: u32, payload: &[u8]) -> ForwardResponse {
         let mut messages = Vec::new();
         let payload_str = String::from_utf8_lossy(payload);
@@ -882,6 +938,54 @@ impl MockLogicService {
             1008 => {
                 let item_id = json.get("itemId").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
                 messages.extend(self.handle_use_item(uid, item_id));
+            }
+
+            // ── 队伍邀请 ──
+            2002 => {
+                let target = json.get("targetUid").and_then(|v| v.as_u64()).unwrap_or(0);
+                if target > 0 {
+                    let leader_name = self.players.get(&uid).map(|p| p.name.clone()).unwrap_or_else(|| format!("Player{}", uid));
+                    let party_id = self.party_mgr.create_and_invite(uid, &leader_name, target);
+                    if party_id > 0 {
+                        let invite = serde_json::json!({"type":"party_invite","from":uid,"fromName":leader_name,"partyId":party_id}).to_string();
+                        messages.push(dm(target, 7002, invite, 1));
+                        let ack = serde_json::json!({"type":"party_created","partyId":party_id}).to_string();
+                        messages.push(dm(uid, 7001, ack, 1));
+                    }
+                }
+            }
+
+            // ── 接受邀请 ──
+            2003 => {
+                let name = self.players.get(&uid).map(|p| p.name.clone()).unwrap_or_else(|| format!("Player{}", uid));
+                if let Some(party_id) = self.party_mgr.accept_invite(uid, &name) {
+                    let join = serde_json::json!({"type":"party_join","uid":uid,"name":name,"partyId":party_id}).to_string();
+                    let members = self.party_mgr.get_party_members(party_id);
+                    for m_uid in members {
+                        if m_uid != uid {
+                            messages.push(dm(0, 7002, join.clone(), 0));
+                        }
+                    }
+                    let ack = serde_json::json!({"type":"party_joined","partyId":party_id}).to_string();
+                    messages.push(dm(uid, 7001, ack, 1));
+                }
+            }
+
+            // ── 离开队伍 ──
+            2004 => {
+                let name = self.players.get(&uid).map(|p| p.name.clone()).unwrap_or_else(|| format!("Player{}", uid));
+                if let Some(party_id) = self.party_mgr.get_party_id(uid) {
+                    let members = self.party_mgr.get_party_members(party_id);
+                    self.party_mgr.leave(uid);
+                    let leave = serde_json::json!({"type":"party_leave","uid":uid,"name":name}).to_string();
+                    for m_uid in members {
+                        if m_uid != uid {
+                            messages.push(dm(0, 7002, leave.clone(), 0));
+                        }
+                    }
+                    let ack = serde_json::json!({"type":"party_left"}).to_string();
+                    messages.push(dm(uid, 7001, ack, 1));
+                }
             }
 
             // ── 聊天 ──
@@ -969,6 +1073,21 @@ impl MockLogicService {
                 .to_string();
                 messages.push(dm(uid, msg_id + 5000, echo_json, 0));
             }
+        }
+
+        // 附带怪物位置(后台 loop 已 tick，此处仅广播最新位置)
+        for mob in self.mobs.iter() {
+            if mob.state != MobState::Dead {
+                messages.push(dm(0, 8004, serde_json::json!({
+                    "entityId": mob.entity_id, "x": mob.x, "y": mob.y,
+                    "hp": mob.hp, "maxHp": mob.max_hp,
+                }).to_string(), 0));
+            }
+        }
+
+        // 附带玩家最新 HP/MP（怪物可能已攻击）
+        if let Some(p) = self.players.get(&uid) {
+            messages.push(dm(uid, 5001, p.to_stats_json(), 1));
         }
 
         ForwardResponse { messages }
@@ -1707,6 +1826,8 @@ impl MockLogicService {
                         mob.x = mob.spawn_x;
                         mob.y = mob.spawn_y;
                         mob.target_uid = None;
+                        mob.patrol_tx = None;
+                        mob.patrol_ty = None;
                     }
                 }
                 MobState::Idle | MobState::Patrolling => {
@@ -1725,20 +1846,24 @@ impl MockLogicService {
                         mob.target_uid = Some(puid);
                         mob.state = MobState::Chasing;
                     } else {
-                        // 巡逻
-                        if now - mob.last_move > 2000 {
+                        // 巡逻：小步长移动到出生点周围的随机位置
+                        if now - mob.last_move > 500 {
                             mob.last_move = now;
                             mob.move_dir = (now % 628) as f32 / 100.0;
-
-                            let new_x = (mob.spawn_x + (mob.move_dir.cos() * def.radius))
-                                .max(20.0).min(WORLD_W - 20.0);
-                            let new_y = (mob.spawn_y + (mob.move_dir.sin() * def.radius))
-                                .max(20.0).min(WORLD_H - 20.0);
-
-                            if distance(mob.x, mob.y, new_x, new_y) > 5.0 {
-                                mob.x = new_x;
-                                mob.y = new_y;
-                                mob.dir = if new_x > mob.x { 1 } else { 3 };
+                            mob.patrol_tx = Some((mob.spawn_x + (mob.move_dir.cos() * def.radius))
+                                .max(20.0).min(WORLD_W - 20.0));
+                            mob.patrol_ty = Some((mob.spawn_y + (mob.move_dir.sin() * def.radius))
+                                .max(20.0).min(WORLD_H - 20.0));
+                        }
+                        // 每帧小步移动
+                        if let (Some(tx), Some(ty)) = (mob.patrol_tx, mob.patrol_ty) {
+                            let dx = tx - mob.x;
+                            let dy = ty - mob.y;
+                            let len = (dx*dx+dy*dy).sqrt();
+                            if len > 2.0 {
+                                mob.x += (dx/len) * def.move_speed * 3.0;
+                                mob.y += (dy/len) * def.move_speed * 3.0;
+                                mob.dir = if dx > 0.0 { 1 } else { 3 };
                             }
                         }
                     }
@@ -1776,8 +1901,8 @@ impl MockLogicService {
                                 let dy = *py - mob.y;
                                 let len = (dx * dx + dy * dy).sqrt();
                                 if len > 0.0 {
-                                    mob.x += (dx / len) * def.move_speed * 8.0;
-                                    mob.y += (dy / len) * def.move_speed * 8.0;
+                                    mob.x += (dx / len) * def.move_speed * 2.0;
+                                    mob.y += (dy / len) * def.move_speed * 2.0;
                                     mob.dir = if dx > 0.0 { 1 } else { 3 };
                                 }
                             }
@@ -1833,7 +1958,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  技能: {} 个", SKILLS.len());
     println!();
 
-    let service = MockLogicService::default();
+    let mut service = MockLogicService::default();
+
+    // 尝试连接 PostgreSQL（不可用则降级，游戏仍正常运行）
+    match logic_lib::db::Database::new("postgres://mmo:mmo_dev_pass@127.0.0.1:5433/mmorpg").await {
+        Ok(db) => {
+            println!("  ✅ PostgreSQL 已连接");
+            let db = Arc::new(db);
+            service.db = Some(db.clone());
+
+            // 后台自动存盘 — 每 30 秒
+            let state = service.state.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+                    for player in state.players.iter() {
+                        let data = serde_json::json!({
+                            "uid": player.uid,
+                            "name": player.name,
+                            "level": player.level,
+                            "exp": player.exp,
+                            "x": player.x, "y": player.y,
+                            "hp": player.hp, "maxHp": player.max_hp,
+                            "mp": player.mp, "maxMp": player.max_mp,
+                            "atk": player.atk, "def": player.def,
+                            "weapon": player.weapon, "armor": player.armor, "accessory": player.accessory,
+                            "inventory": player.inventory.iter().map(|(id,c)| serde_json::json!({"itemId":id,"count":c})).collect::<Vec<_>>(),
+                            "quests": player.quests.iter().map(|(qid,p)| serde_json::json!({"questId":qid,"progress":p})).collect::<Vec<_>>(),
+                        });
+                        let _ = db.save_player(player.uid, &data).await;
+                    }
+                }
+            });
+        }
+        Err(e) => {
+            println!("  ⚠️ PostgreSQL 不可用 ({}): 数据仅存内存", e);
+        }
+    }
 
     Server::builder()
         .add_service(LogicServiceServer::new(service))

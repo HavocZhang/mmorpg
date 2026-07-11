@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>MMO Gateway — SDK 测试</title>
+<style>
+body{margin:20px;font-family:monospace;background:#1a1a2e;color:#eee}
+#log{background:#0a0a1a;padding:12px;border-radius:6px;height:400px;overflow-y:auto;font-size:12px;line-height:1.5}
+.ok{color:#2ecc71}.warn{color:#f39c12}.err{color:#e74c3c}.info{color:#3498db}
+button{margin:4px;padding:6px 14px;cursor:pointer}
+input{padding:5px;width:120px;margin:4px}
+</style>
+</head>
+<body>
+<h2>🔌 MMO SDK 端到端测试</h2>
+<p>Proxy: ws://127.0.0.1:9000 → Gateway TCP 7888</p>
+<div>
+  UID: <input id="uid" value="7777" size="6">
+  <button onclick="doConnect()">连接</button>
+  <button onclick="doChat()">发聊天</button>
+  <button onclick="doMove()">移动</button>
+  <button onclick="doAttack()">攻击怪物</button>
+  <button onclick="doClose()">断开</button>
+</div>
+<div id="log"></div>
+
+<script src="sdk/game_sdk.js"></script>
+<script>
+const SDK = new GameSDK();
+const KEY = '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff';
+let uid = 7777;
+
+function log(msg, cls='') {
+    const d = document.getElementById('log');
+    d.innerHTML += `<div class="${cls}">[${new Date().toISOString().slice(11,23)}] ${msg}</div>`;
+    d.scrollTop = d.scrollHeight;
+}
+
+// 消息分发
+SDK.on('msg', ({msgId, body}) => {
+    const names = {1:'握手',100:'玩家列表',1001:'攻击',1002:'技能',2001:'聊天',3001:'移动',4001:'查询玩家',
+        5001:'角色属性',5002:'装备',5003:'背包',5004:'技能列表',5005:'任务',5006:'角色信息',
+        6001:'战斗结果',6002:'战斗通知',7001:'聊天ACK',7002:'聊天广播',
+        8001:'位置更新',8002:'玩家进入',8003:'玩家离开',9001:'玩家列表回复'};
+    const name = names[msgId] || `msg_${msgId}`;
+    log(`${name}: ${JSON.stringify(body).slice(0,120)}`, 'info');
+});
+
+async function doConnect() {
+    uid = parseInt(document.getElementById('uid').value) || 7777;
+    log(`连接中... uid=${uid}`, 'warn');
+    try {
+        await SDK.connect('ws://127.0.0.1:9000', uid, KEY);
+        log('✅ 连接成功！', 'ok');
+    } catch(e) {
+        log(`❌ ${e.message}`, 'err');
+    }
+}
+async function doChat() {
+    await SDK.send(2001, JSON.stringify({ from: uid, text: 'Hello MMO!', channel: 'world' }));
+    log('📤 发送聊天: Hello MMO!', 'info');
+}
+async function doMove() {
+    const x = 400 + Math.random()*400, y = 300 + Math.random()*300;
+    await SDK.send(3001, JSON.stringify({ x, y, dir: Math.floor(Math.random()*8) }));
+    log(`📤 移动到 (${x.toFixed(0)},${y.toFixed(0)})`, 'info');
+}
+async function doAttack() {
+    // 攻击史莱姆 (entity_id=10000, 10001等)
+    await SDK.send(1001, JSON.stringify({ skillId: 1, targetUid: 10000 }));
+    log('📤 攻击史莱姆 (targetUid=10000)', 'info');
+}
+function doClose() { SDK.close(); log('断开连接', 'warn'); }
+</script>
+</body>
+</html>
