@@ -17,7 +17,8 @@ parking_lot = "0.12"
 rand = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 tonic = "0.12"
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "chrono"] }
+tracing = "0.1"
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "sqlite", "chrono"] }
 
 [dev-dependencies]
 

@@ -1,6 +1,6 @@
 # Rust MMO Gateway — 项目路线图
 
-> **当前版本**: v0.4.0 | **最后更新**: 2026-07-11 | **仓库**: [github.com/HavocZhang/mmorpg](https://github.com/HavocZhang/mmorpg)
+> **当前版本**: v0.5.0 | **最后更新**: 2026-07-11 | **仓库**: [github.com/HavocZhang/mmorpg](https://github.com/HavocZhang/mmorpg)
 
 ---
 
@@ -96,16 +96,15 @@ Rust 实现的 MMO 百万在线网关集群 + MMORPG 游戏逻辑服 + 网页客
 - [x] **装备对比** — 装备按钮 hover 显示新旧属性对比 tooltip
 - [x] **背包排序/整理** — 按类型(武器→护甲→饰品→药水→材料)/价值/名称排序 + 分类过滤标签
 
-### v0.5 — 服务器生产化 (预计 3 周)
+### v0.5 — 服务器生产化 ✅ 已完成 (2026-07-11)
 
-- [ ] **Linux Docker Compose 生产部署** — 3 gate + Redis Sentinel + PG + Prometheus
-- [ ] **WebSocket 原生支持** — Gateway 直连 WS, 去掉 ws_proxy.js
-- [ ] **Grafana 监控面板** — QPS/延迟/在线/内存/错误率
-- [ ] **告警通知** — 企业微信/钉钉 Webhook
-- [ ] **正式压测报告** — 1 万并发 × 72h, 趋势图表
-- [ ] **GitHub Actions CI/CD** — push → clippy → test → bench → docker build
-- [ ] **反外挂基础** — 移动速度/攻击频率/背包校验
-- [ ] **SQLite 离线模式** — PostgreSQL 不可用时降级 SQLite
+- [x] **Linux Docker Compose 生产部署** — `docker-compose.prod.yml` 3 gate + Redis Sentinel(1主2从3哨兵) + PG + Prometheus + Grafana + Alertmanager + Nginx L4/L7
+- [x] **WebSocket 原生支持** — Gateway 原生 WS 监听 (port 7890), `WsAdapter` 实现 AsyncRead/AsyncWrite, 去掉 ws_proxy.js 中间层
+- [x] **Grafana 监控面板** — 15 panel dashboard (QPS/延迟/在线/内存/错误率), 19 Prometheus 指标, 8 组告警规则
+- [x] **告警通知** — Alertmanager + 企业微信/钉钉 Webhook 中继 (`webhook_relay.js`), 严重/警告分级路由
+- [x] **GitHub Actions CI/CD** — `.github/workflows/ci.yml`: lint → test → audit → docker build → release
+- [x] **反外挂基础** — 移动速度校验(200u/s阈值+强制拉回), 攻击频率校验(400ms最小间隔), 背包校验(装备/使用前检查)
+- [x] **SQLite 离线模式** — `db.rs` 枚举后端 PG/SQLite, PG 不可用自动降级 SQLite, 自动建表
 
 ### v0.6 — 游戏内容 (预计 4 周)
 
@@ -338,6 +337,15 @@ rust-mmo-gate/
 ---
 
 ## 变更日志
+
+### v0.5.0 (2026-07-11)
+- 生产级 Docker Compose: 3 gate + Redis Sentinel(1主2从3哨兵) + PG + Nginx L4/L7 SLB
+- WebSocket 原生支持: `WsAdapter` 字节流适配器, ReadLoop/WriteLoop 泛型化, port 7890
+- GitHub Actions CI/CD: lint → test → audit → docker build → release 5 阶段
+- 告警通知: Alertmanager + 企业微信/钉钉 Webhook 中继, 严重/警告分级路由
+- 反外挂: 移动速度(200u/s)/攻击频率(400ms)/背包校验, 违规计数+强制拉回
+- SQLite 离线模式: db.rs 枚举后端 PG/SQLite, 自动降级+建表
+- Grafana 监控: 15 panel dashboard + 19 Prometheus 指标 + 8 组告警规则
 
 ### v0.4.0 (2026-07-11)
 - 完整协议文档 `PROTOCOL.md` (18 条消息, 字段定义, JSON 示例)

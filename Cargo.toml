@@ -55,6 +55,9 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 prometheus = "0.14"
 
+# WebSocket 原生支持
+tokio-tungstenite = "0.24"
+
 # 工具基础
 anyhow = "1.0"
 thiserror = "2.0"

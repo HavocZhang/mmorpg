@@ -1,25 +1,25 @@
 //! ReadLoop 读循环模块
 //!
 //! 独立异步任务，负责：
-//! 1. 从 TCP ReadHalf 读取数据
+//! 1. 从 TCP/WS ReadHalf 读取数据
 //! 2. 喂入 PacketDecoder 解码
 //! 3. 将解码后的消息路由至对应逻辑分片服务（通过 gRPC upstream）
 //! 4. 更新会话活跃时间
 
-use tokio::net::tcp::OwnedReadHalf;
+use tokio::io::AsyncReadExt;
 use tracing::{debug, warn};
 
 use crate::foundation::GateError;
 use crate::protocol::decoder::PacketDecoder;
 
-/// 读循环
-pub struct ReadLoop {
+/// 读循环 (泛型: 支持 TCP OwnedReadHalf 和 WS adapter)
+pub struct ReadLoop<R> {
     decoder: PacketDecoder,
-    read_half: OwnedReadHalf,
+    read_half: R,
 }
 
-impl ReadLoop {
-    pub fn new(decoder: PacketDecoder, read_half: OwnedReadHalf) -> Self {
+impl<R: tokio::io::AsyncRead + Unpin> ReadLoop<R> {
+    pub fn new(decoder: PacketDecoder, read_half: R) -> Self {
         Self { decoder, read_half }
     }
 
@@ -60,8 +60,6 @@ impl ReadLoop {
     }
 }
 
-use tokio::io::AsyncReadExt;
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,6 +72,6 @@ mod tests {
         // 结构体创建测试（需要真实TCP连接才能完整测试）
         let cipher = AesGcmCipher::from_hex_key(TEST_KEY).unwrap();
         let _decoder = PacketDecoder::new(cipher);
-        // ReadLoop::new 需要 OwnedReadHalf，这里只验证类型存在
+        // ReadLoop::new 需要 AsyncRead 实现，这里只验证类型存在
     }
 }

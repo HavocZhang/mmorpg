@@ -80,7 +80,7 @@ COPY .env.prod /app/.env.prod
 USER gateway
 
 # Expose ports: TCP game traffic + HTTP admin
-EXPOSE 7888 9090
+EXPOSE 7888 7890 9090
 
 # gRPC internal ports (logic servers)
 EXPOSE 50051 50052 50053 50054

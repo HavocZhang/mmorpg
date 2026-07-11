@@ -61,23 +61,22 @@ pub struct HandshakeInfo {
     pub token: String,
 }
 
-/// 处理单个TCP连接的完整生命周期
-pub async fn handle_connection(
-    stream: TcpStream,
+/// 处理已分离读写的连接的完整生命周期 (泛型版, TCP/WS 共用)
+pub async fn handle_connection_split<R, W>(
+    mut read_half: R,
+    write_half: W,
     peer_addr: SocketAddr,
     session_mgr: Arc<SessionManager>,
     security_mgr: Arc<SecurityManager>,
     router_mgr: Arc<RouterManager>,
     cluster_mgr: Arc<ClusterManager>,
     config: &AppConfig,
-) -> Result<(), GateError> {
+) -> Result<(), GateError>
+where
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
+    W: tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
     debug!("新连接: {}", peer_addr);
-
-    // 设置 TCP_NODELAY
-    stream.set_nodelay(true).ok();
-
-    // 读写分离
-    let (mut read_half, write_half) = stream.into_split();
 
     // --- 握手 ---
     let cipher = AesGcmCipher::from_hex_key(&config.crypto.aes_key)
@@ -105,7 +104,7 @@ pub async fn handle_connection(
                 }
             });
 
-            // --- 通知逻辑服玩家上线（仅在 gRPC 可用时） ---
+            // --- 通知逻辑服玩家上线 ---
             if router_mgr.conn_pool.has_healthy_endpoint() {
                 let pool_for_online = router_mgr.conn_pool.clone();
                 let node_name_for_online = config.gate.node_name.clone();
@@ -119,7 +118,6 @@ pub async fn handle_connection(
                         .await
                     {
                         Ok(messages) => {
-                            // 分发逻辑服返回的上线消息
                             let downstream = Arc::new(DownstreamDispatcher::new(session_mgr_for_online.clone()));
                             for dm in &messages {
                                 dispatch_downstream(
@@ -161,25 +159,19 @@ pub async fn handle_connection(
             let player_uid = handshake_info.player_uid;
             let cluster_mgr_clone = cluster_mgr.clone();
 
-            // 创建下行分发器
             let downstream = Arc::new(DownstreamDispatcher::new(session_mgr.clone()));
 
             let read_handle = tokio::spawn(async move {
                 let result = read_loop.run(|msg_id, payload| {
-                    // 更新会话活跃时间
                     session_mgr_clone.touch_session(session_id);
 
-                    // 安全校验：消息频率限流
                     let is_battle = (1000..2000).contains(&msg_id);
                     if !security_mgr_clone.check_player_rate(player_uid, is_battle) {
                         warn!("玩家消息限流: uid={} msg_id={}", player_uid, msg_id);
                         return;
                     }
 
-                    // 上行路由到逻辑服（快速路径优化）
-                    // 当所有 gRPC 端点不健康时，跳过 spawn 直接本地回显
                     if !conn_pool.has_healthy_endpoint() {
-                        // 快速降级：本地回显，不创建异步任务
                         let priority = if is_battle {
                             MsgPriority::High
                         } else if (2000..3000).contains(&msg_id) {
@@ -204,10 +196,8 @@ pub async fn handle_connection(
                         let cluster_for_dispatch = cluster_mgr_clone.clone();
                         tokio::spawn(async move {
                             let router = crate::grpc_router::upstream::UpstreamRouter::new(pool);
-
                             match router.route(player_uid, msg_id, payload.clone()).await {
                                 Ok(response) => {
-                                    // 成功收到逻辑服响应，分发下行消息
                                     for dm in &response.messages {
                                         dispatch_downstream(
                                             &downstream_clone,
@@ -219,12 +209,10 @@ pub async fn handle_connection(
                                     }
                                 }
                                 Err(e) => {
-                                    // 逻辑服不可用，降级为本地回显
                                     debug!(
                                         "逻辑服不可用，降级回显: uid={} msg_id={} err={}",
                                         player_uid, msg_id, e
                                     );
-
                                     let priority = if is_battle {
                                         MsgPriority::High
                                     } else if (2000..3000).contains(&msg_id) {
@@ -232,8 +220,6 @@ pub async fn handle_connection(
                                     } else {
                                         MsgPriority::Low
                                     };
-
-                                    // 回显给发送者
                                     if let Some(session) =
                                         session_mgr_for_fallback.get_session(session_id)
                                     {
@@ -257,7 +243,7 @@ pub async fn handle_connection(
                     Err(e) => warn!("ReadLoop 异常退出: session_id={} err={}", session_id, e),
                 }
 
-                // ReadLoop 结束意味着连接断开，通知逻辑服玩家离线（仅在 gRPC 可用时）
+                // ReadLoop 结束 → 通知离线 + 清理
                 if conn_pool.has_healthy_endpoint() {
                     let pool_for_offline = conn_pool.clone();
                     let uid_for_offline = player_uid;
@@ -268,7 +254,6 @@ pub async fn handle_connection(
                         if let Ok(messages) = router
                             .notify_player_offline(uid_for_offline, session_id, "连接断开")
                             .await {
-                            // 分发逻辑服返回的离线消息（如玩家离开广播）
                             let downstream = Arc::new(DownstreamDispatcher::new(session_mgr_for_offline.clone()));
                             for dm in &messages {
                                 dispatch_downstream(
@@ -280,8 +265,6 @@ pub async fn handle_connection(
                                 );
                             }
                         }
-
-                        // 删除 Redis 路由索引
                         if let Some(redis_conn) = cluster_for_offline.conn() {
                             let route_index = RouteIndex::new(cluster_for_offline.redis_url.clone());
                             if let Err(e) = route_index.remove_route(redis_conn, uid_for_offline).await {
@@ -290,7 +273,6 @@ pub async fn handle_connection(
                         }
                     });
                 } else {
-                    // gRPC 不可用时仅清理 Redis 路由索引
                     let cluster_for_offline = cluster_mgr_clone.clone();
                     tokio::spawn(async move {
                         if let Some(redis_conn) = cluster_for_offline.conn() {
@@ -302,19 +284,16 @@ pub async fn handle_connection(
                     });
                 }
 
-                // 清理会话
                 session_mgr_clone.remove_session(session_id);
-
                 result
             });
 
-            // 等待任一循环结束即断开连接
+            // 等待任一循环结束
             tokio::select! {
                 _ = write_handle => {
                     debug!("WriteLoop 结束，断开连接: session_id={}", session_id);
                 }
                 _ = read_handle => {
-                    // ReadLoop 结束已自行清理会话
                 }
             }
 
@@ -332,11 +311,43 @@ pub async fn handle_connection(
     Ok(())
 }
 
+/// 处理单个TCP连接的完整生命周期
+pub async fn handle_connection(
+    stream: TcpStream,
+    peer_addr: SocketAddr,
+    session_mgr: Arc<SessionManager>,
+    security_mgr: Arc<SecurityManager>,
+    router_mgr: Arc<RouterManager>,
+    cluster_mgr: Arc<ClusterManager>,
+    config: &AppConfig,
+) -> Result<(), GateError> {
+    debug!("新TCP连接: {}", peer_addr);
+
+    // 设置 TCP_NODELAY
+    stream.set_nodelay(true).ok();
+
+    // 读写分离
+    let (read_half, write_half) = stream.into_split();
+
+    // 委托给通用处理函数 (TCP/WS 共用)
+    handle_connection_split(
+        read_half,
+        write_half,
+        peer_addr,
+        session_mgr,
+        security_mgr,
+        router_mgr,
+        cluster_mgr,
+        config,
+    )
+    .await
+}
+
 /// 执行握手协议
 ///
-/// 从 TCP 流读取第一个协议包，解密后解析握手信息
-async fn perform_handshake(
-    read_half: &mut tokio::net::tcp::OwnedReadHalf,
+/// 从 TCP/WS 流读取第一个协议包，解密后解析握手信息
+async fn perform_handshake<R: tokio::io::AsyncRead + Unpin>(
+    read_half: &mut R,
     cipher: &AesGcmCipher,
     _config: &AppConfig,
 ) -> Result<HandshakeInfo, GateError> {

@@ -156,13 +156,24 @@ async fn main() -> Result<()> {
     ));
     info!("✅ TCP接入服务启动完成，开始接受连接");
 
+    // ── 阶段3+4+5：启动WebSocket接入服务 (v0.5) ──
+    let ws_handle = tokio::spawn(network::ws_listener::run_ws_acceptor(
+        session_mgr.clone(),
+        security_mgr.clone(),
+        router_mgr.clone(),
+        cluster_mgr.clone(),
+        Arc::new(config.clone()),
+    ));
+    info!("✅ WebSocket接入服务启动完成 (port {})", config.gate.ws_port);
+
     // ── 信号监听：优雅停机 ──
     admin::graceful_shutdown::wait_for_shutdown().await;
     info!("收到停机信号，开始优雅关闭...");
 
     // 1. 停止接受新连接
     tcp_handle.abort();
-    info!("✅ TCP接入服务已停止");
+    ws_handle.abort();
+    info!("✅ TCP + WebSocket 接入服务已停止");
 
     // 2. 等待存量连接处理（给 5 秒 grace period）
     info!("等待存量连接处理（5秒 grace period）...");

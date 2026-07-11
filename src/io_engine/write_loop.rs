@@ -11,16 +11,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tokio::io::AsyncWriteExt;
-use tokio::net::tcp::OwnedWriteHalf;
 use tokio::time::interval;
 use tracing::{debug, warn};
 
 use crate::crypto::aes_gcm::AesGcmCipher;
 use crate::session::session_struct::{MsgPriority, PendingMsg};
 
-/// 写循环
-pub struct WriteLoop {
-    write_half: OwnedWriteHalf,
+/// 写循环 (泛型: 支持 TCP OwnedWriteHalf 和 WS adapter)
+pub struct WriteLoop<W> {
+    write_half: W,
     merge_window: Duration,
     /// 最大队列深度（超过则丢弃低优先级包）
     max_queue_depth: usize,
@@ -30,8 +29,8 @@ pub struct WriteLoop {
     last_congestion_warn: AtomicU64,
 }
 
-impl WriteLoop {
-    pub fn new(write_half: OwnedWriteHalf, merge_window_ms: u64, cipher: AesGcmCipher) -> Self {
+impl<W: tokio::io::AsyncWrite + Unpin> WriteLoop<W> {
+    pub fn new(write_half: W, merge_window_ms: u64, cipher: AesGcmCipher) -> Self {
         Self {
             write_half,
             merge_window: Duration::from_millis(merge_window_ms),

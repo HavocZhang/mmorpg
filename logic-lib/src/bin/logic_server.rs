@@ -208,6 +208,12 @@ struct PlayerState {
     skill_cooldowns: std::collections::HashMap<u32, u64>,
     // 任务进度: quest_id -> (accepted, progress)
     quests: Vec<(u32, u32)>, // (quest_id, kill_count)
+    // ── 反外挂追踪 (v0.5) ──
+    last_move_ms: u64,           // 上次移动时间 (毫秒)
+    last_attack_ms: u64,         // 上次攻击时间 (毫秒)
+    last_x: f32,                 // 上次报告的 X 坐标
+    last_y: f32,                 // 上次报告的 Y 坐标
+    violation_count: u32,        // 累计违规次数
 }
 
 impl PlayerState {
@@ -234,6 +240,11 @@ impl PlayerState {
             inventory: vec![(6, 3), (7, 2)], // 初始3个生命药水, 2个法力药水
             skill_cooldowns: std::collections::HashMap::new(),
             quests: Vec::new(),
+            last_move_ms: 0,
+            last_attack_ms: 0,
+            last_x: x,
+            last_y: y,
+            violation_count: 0,
         }
     }
 
@@ -899,6 +910,17 @@ impl GameState {
             // ── 战斗：基础攻击 ──
             1001 => {
                 let target_uid = json.get("targetUid").and_then(|v| v.as_u64()).unwrap_or(0);
+                // ── 反外挂: 攻击频率校验 ──
+                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+                if let Some(mut player) = self.players.get_mut(&uid) {
+                    let elapsed = now.saturating_sub(player.last_attack_ms);
+                    if elapsed < 400 {  // 普攻CD 800ms, 允许 400ms 误差
+                        player.violation_count += 1;
+                        tracing::warn!("反外挂: 攻击频率异常 uid={} elapsed={}ms viol={}", uid, elapsed, player.violation_count);
+                        return ForwardResponse { messages: vec![] };
+                    }
+                    player.last_attack_ms = now;
+                }
                 messages.extend(self.handle_attack(uid, 1, target_uid));
             }
 
@@ -906,6 +928,17 @@ impl GameState {
             1002 => {
                 let skill_id = json.get("skillId").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
                 let target_uid = json.get("targetUid").and_then(|v| v.as_u64()).unwrap_or(0);
+                // ── 反外挂: 攻击频率校验 ──
+                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+                if let Some(mut player) = self.players.get_mut(&uid) {
+                    let elapsed = now.saturating_sub(player.last_attack_ms);
+                    if elapsed < 400 {
+                        player.violation_count += 1;
+                        tracing::warn!("反外挂: 技能频率异常 uid={} elapsed={}ms viol={}", uid, elapsed, player.violation_count);
+                        return ForwardResponse { messages: vec![] };
+                    }
+                    player.last_attack_ms = now;
+                }
                 messages.extend(self.handle_attack(uid, skill_id, target_uid));
             }
 
@@ -918,6 +951,13 @@ impl GameState {
             // ── 装备/卸下 ──
             1004 => {
                 let item_id = json.get("itemId").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                // ── 反外挂: 背包校验 ──
+                if let Some(player) = self.players.get(&uid) {
+                    if item_id != 0 && !player.inventory.iter().any(|(id, c)| *id == item_id && *c > 0) {
+                        tracing::warn!("反外挂: 装备不存在的物品 uid={} item={}", uid, item_id);
+                        return ForwardResponse { messages: vec![dm(uid, 5004, serde_json::json!({"error": "item_not_found"}).to_string(), 0)] };
+                    }
+                }
                 messages.extend(self.handle_equip(uid, item_id));
             }
 
@@ -942,6 +982,13 @@ impl GameState {
             // ── 使用物品 ──
             1008 => {
                 let item_id = json.get("itemId").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                // ── 反外挂: 背包校验 ──
+                if let Some(player) = self.players.get(&uid) {
+                    if !player.inventory.iter().any(|(id, c)| *id == item_id && *c > 0) {
+                        tracing::warn!("反外挂: 使用不存在的物品 uid={} item={}", uid, item_id);
+                        return ForwardResponse { messages: vec![dm(uid, 6001, serde_json::json!({"error": "item_not_found"}).to_string(), 0)] };
+                    }
+                }
                 messages.extend(self.handle_use_item(uid, item_id));
             }
 
@@ -1026,6 +1073,27 @@ impl GameState {
                 let dir = json.get("dir").and_then(|v| v.as_u64()).unwrap_or(2) as u8;
 
                 if let Some(mut player) = self.players.get_mut(&uid) {
+                    // ── 反外挂: 移动速度校验 ──
+                    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+                    let dx = x - player.last_x;
+                    let dy = y - player.last_y;
+                    let dist = (dx * dx + dy * dy).sqrt();
+                    let dt = if player.last_move_ms > 0 { now.saturating_sub(player.last_move_ms) } else { 100 };
+                    // 速度阈值: 200 单位/秒 (正常客户端约 60/s, 留 3x 余量)
+                    let max_dist = (dt as f32 / 1000.0) * 200.0;
+                    if dist > max_dist && player.last_move_ms > 0 {
+                        player.violation_count += 1;
+                        tracing::warn!("反外挂: 移动速度异常 uid={} dist={} max={} viol={}", uid, dist, max_dist, player.violation_count);
+                        // 强制拉回到上次合法位置
+                        return ForwardResponse { messages: vec![dm(uid, 5001, serde_json::json!({
+                            "uid": uid, "x": player.last_x, "y": player.last_y,
+                            "hp": player.hp, "maxHp": player.max_hp,
+                            "mp": player.mp, "maxMp": player.max_mp
+                        }).to_string(), 0)] };
+                    }
+                    player.last_x = x;
+                    player.last_y = y;
+                    player.last_move_ms = now;
                     player.x = x;
                     player.y = y;
                     player.dir = dir;

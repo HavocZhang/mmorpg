@@ -1,0 +1,338 @@
+# ═══════════════════════════════════════════════════════
+#  Rust MMO Gateway — 生产环境 Docker Compose
+#  3 Gate + Redis Sentinel + PostgreSQL + Prometheus + Grafana + Alertmanager
+# ═══════════════════════════════════════════════════════
+#  启动: docker compose -f docker-compose.prod.yml up -d
+# ═══════════════════════════════════════════════════════
+
+services:
+  # ─── PostgreSQL (持久化) ───
+  postgres:
+    image: postgres:16-alpine
+    container_name: mmo-pg-prod
+    restart: always
+    environment:
+      POSTGRES_DB: mmorpg
+      POSTGRES_USER: mmo
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-mmo_prod_pass_2026}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./deploy/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mmo -d mmorpg"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [mmo-prod]
+
+  # ─── Redis Sentinel (高可用) ───
+  redis-master:
+    image: redis:7-alpine
+    container_name: mmo-redis-master
+    restart: always
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks: [mmo-prod]
+
+  redis-slave-1:
+    image: redis:7-alpine
+    container_name: mmo-redis-slave-1
+    restart: always
+    command: redis-server --slaveof redis-master 6379 --maxmemory 512mb
+    depends_on: [redis-master]
+    networks: [mmo-prod]
+
+  redis-slave-2:
+    image: redis:7-alpine
+    container_name: mmo-redis-slave-2
+    restart: always
+    command: redis-server --slaveof redis-master 6379 --maxmemory 512mb
+    depends_on: [redis-master]
+    networks: [mmo-prod]
+
+  redis-sentinel-1:
+    image: redis:7-alpine
+    container_name: mmo-sentinel-1
+    restart: always
+    command: >
+      sh -c 'echo "sentinel monitor mmo-master redis-master 6379 2" > /tmp/sentinel.conf &&
+             echo "sentinel down-after-milliseconds mmo-master 5000" >> /tmp/sentinel.conf &&
+             echo "sentinel failover-timeout mmo-master 10000" >> /tmp/sentinel.conf &&
+             echo "sentinel parallel-syncs mmo-master 1" >> /tmp/sentinel.conf &&
+             redis-server /tmp/sentinel.conf --sentinel'
+    depends_on: [redis-master]
+    ports:
+      - "26379:26379"
+    networks: [mmo-prod]
+
+  redis-sentinel-2:
+    image: redis:7-alpine
+    container_name: mmo-sentinel-2
+    restart: always
+    command: >
+      sh -c 'echo "sentinel monitor mmo-master redis-master 6379 2" > /tmp/sentinel.conf &&
+             echo "sentinel down-after-milliseconds mmo-master 5000" >> /tmp/sentinel.conf &&
+             echo "sentinel failover-timeout mmo-master 10000" >> /tmp/sentinel.conf &&
+             echo "sentinel parallel-syncs mmo-master 1" >> /tmp/sentinel.conf &&
+             redis-server /tmp/sentinel.conf --sentinel'
+    depends_on: [redis-master]
+    ports:
+      - "26380:26379"
+    networks: [mmo-prod]
+
+  redis-sentinel-3:
+    image: redis:7-alpine
+    container_name: mmo-sentinel-3
+    restart: always
+    command: >
+      sh -c 'echo "sentinel monitor mmo-master redis-master 6379 2" > /tmp/sentinel.conf &&
+             echo "sentinel down-after-milliseconds mmo-master 5000" >> /tmp/sentinel.conf &&
+             echo "sentinel failover-timeout mmo-master 10000" >> /tmp/sentinel.conf &&
+             echo "sentinel parallel-syncs mmo-master 1" >> /tmp/sentinel.conf &&
+             redis-server /tmp/sentinel.conf --sentinel'
+    depends_on: [redis-master]
+    ports:
+      - "26381:26379"
+    networks: [mmo-prod]
+
+  # ─── Logic Server ───
+  logic-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: rust-mmo-gate:latest
+    container_name: mmo-logic-prod
+    restart: always
+    command: /usr/local/bin/logic-server
+    environment:
+      GRPC_LISTEN_ADDR: "0.0.0.0:50051"
+      DATABASE_URL: "postgres://mmo:${PG_PASSWORD:-mmo_prod_pass_2026}@postgres:5432/mmorpg"
+      RUST_LOG: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "50051:50051"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "50051"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks: [mmo-prod]
+
+  # ─── Gate-1 ───
+  gate-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: rust-mmo-gate:latest
+    container_name: mmo-gate-1
+    restart: always
+    command: /usr/local/bin/rust-mmo-gate
+    environment:
+      GATE_TCP_BIND: "0.0.0.0"
+      GATE_TCP_PORT: "7888"
+      GATE_WS_PORT: "7890"
+      GATE_HTTP_BIND: "0.0.0.0"
+      GATE_HTTP_PORT: "9090"
+      GATE_NODE_ID: "1"
+      GATE_NODE_NAME: "gate-prod-01"
+      REDIS_URL: "redis://redis-master:6379"
+      GRPC_LOGIC_ENDPOINTS: "grpc://logic-server:50051"
+      RUST_LOG: info
+    depends_on:
+      logic-server:
+        condition: service_healthy
+      redis-master:
+        condition: service_started
+    ports:
+      - "7888:7888"
+      - "7890:7890"
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:9090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks: [mmo-prod]
+
+  # ─── Gate-2 ───
+  gate-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: rust-mmo-gate:latest
+    container_name: mmo-gate-2
+    restart: always
+    command: /usr/local/bin/rust-mmo-gate
+    environment:
+      GATE_TCP_BIND: "0.0.0.0"
+      GATE_TCP_PORT: "7888"
+      GATE_WS_PORT: "7890"
+      GATE_HTTP_BIND: "0.0.0.0"
+      GATE_HTTP_PORT: "9090"
+      GATE_NODE_ID: "2"
+      GATE_NODE_NAME: "gate-prod-02"
+      REDIS_URL: "redis://redis-master:6379"
+      GRPC_LOGIC_ENDPOINTS: "grpc://logic-server:50051"
+      RUST_LOG: info
+    depends_on:
+      logic-server:
+        condition: service_healthy
+      gate-1:
+        condition: service_healthy
+    ports:
+      - "7889:7888"
+      - "7891:7890"
+      - "9091:9090"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:9090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks: [mmo-prod]
+
+  # ─── Gate-3 ───
+  gate-3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: rust-mmo-gate:latest
+    container_name: mmo-gate-3
+    restart: always
+    command: /usr/local/bin/rust-mmo-gate
+    environment:
+      GATE_TCP_BIND: "0.0.0.0"
+      GATE_TCP_PORT: "7888"
+      GATE_WS_PORT: "7890"
+      GATE_HTTP_BIND: "0.0.0.0"
+      GATE_HTTP_PORT: "9090"
+      GATE_NODE_ID: "3"
+      GATE_NODE_NAME: "gate-prod-03"
+      REDIS_URL: "redis://redis-master:6379"
+      GRPC_LOGIC_ENDPOINTS: "grpc://logic-server:50051"
+      RUST_LOG: info
+    depends_on:
+      logic-server:
+        condition: service_healthy
+      gate-2:
+        condition: service_healthy
+    ports:
+      - "7892:7888"
+      - "7893:7890"
+      - "9092:9090"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:9090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks: [mmo-prod]
+
+  # ─── Nginx Load Balancer ───
+  nginx:
+    image: nginx:alpine
+    container_name: mmo-nginx
+    restart: always
+    depends_on:
+      gate-1:
+        condition: service_healthy
+      gate-2:
+        condition: service_healthy
+      gate-3:
+        condition: service_healthy
+    ports:
+      - "7800:7888"   # TCP 游戏流量入口
+      - "7900:7890"   # WebSocket 入口
+    volumes:
+      - ./deploy/nginx/nginx-prod.conf:/etc/nginx/nginx.conf:ro
+    networks: [mmo-prod]
+
+  # ─── Prometheus ───
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: mmo-prometheus
+    restart: always
+    depends_on:
+      gate-1:
+        condition: service_healthy
+    ports:
+      - "9099:9090"
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/alerts:/etc/prometheus/rules:ro
+      - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks: [mmo-prod]
+
+  # ─── Alertmanager (告警通知) ───
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: mmo-alertmanager
+    restart: always
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./deploy/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    networks: [mmo-prod]
+
+  # ─── Grafana ───
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: mmo-grafana
+    restart: always
+    depends_on: [prometheus]
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks: [mmo-prod]
+
+  # ─── Node Exporter (主机指标) ───
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: mmo-node-exporter
+    restart: always
+    pid: host
+    ports:
+      - "9100:9100"
+    networks: [mmo-prod]
+
+  # ─── Redis Exporter ───
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.66.0
+    container_name: mmo-redis-exporter
+    restart: always
+    environment:
+      REDIS_ADDR: "redis://redis-master:6379"
+    ports:
+      - "9121:9121"
+    networks: [mmo-prod]
+
+volumes:
+  pg-data:
+  redis-data:
+  grafana-data:
+
+networks:
+  mmo-prod:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.29.0.0/16
