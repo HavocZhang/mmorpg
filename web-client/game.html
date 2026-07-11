@@ -36,7 +36,7 @@ canvas{display:block}#status{position:absolute;top:8px;left:8px;font-size:11px;p
 .inv-tabs{display:flex;gap:2px;margin-bottom:4px;flex-wrap:wrap}
 .inv-tab{padding:1px 6px;font-size:10px;cursor:pointer;background:#1a1a33;border:1px solid #333;border-radius:2px;color:#888}.inv-tab:hover{color:#fff;background:#2a2a55}.inv-tab.act{color:#2ecc71;border-color:#2ecc71;background:#1a2a33}
 </style></head><body>
-<div id="app"><div id="top"><span>🟢<b class="v" id="ol">0</b></span><span>👤<b class="v" id="nm">-</b></span><span>Lv<b class="v" id="lv">1</b></span><span>⚔<b class="stat-flash v" id="at">10</b></span><span>🛡<b class="stat-flash v" id="df">5</b></span><span id="pt"></span><span style="margin-left:auto;font-size:11px;color:#666">WASD移动 | 1普攻 | 2-5技能 | QE药水 | F对话 | G拾取 | Enter聊天 | T组队</span></div>
+<div id="app"><div id="top"><span>🟢<b class="v" id="ol">0</b></span><span>👤<b class="v" id="nm">-</b></span><span>Lv<b class="v" id="lv">1</b></span><span>💰<b class="stat-flash v" id="gd">0</b></span><span>⚔<b class="stat-flash v" id="at">10</b></span><span>🛡<b class="stat-flash v" id="df">5</b></span><span id="pt"></span><span style="margin-left:auto;font-size:11px;color:#666">WASD移动 | 1普攻 | 2-5技能 | QE药水 | F对话 | G拾取 | Enter聊天 | T组队</span></div>
 <div id="main"><div id="wrap"><canvas id="c"></canvas><div id="status">连接中...</div><div id="cmp"></div></div>
 <div id="side"><div class="p"><h3>角色</h3>HP<div class="bar hp"><div id="hpb" style="width:100%"></div></div><span id="hpt">100/100</span>
   MP<div class="bar mp"><div id="mpb" style="width:100%"></div></div><span id="mpt">50/50</span>
@@ -66,7 +66,7 @@ async function go(uidv){uid=uidv;return new Promise((rv,rj)=>{ws=new WebSocket(W
 async function sd(m,d){if(ws&&ws.readyState===1)ws.send(await P(m,typeof d=='string'?d:JSON.stringify(d)))}
 
 // ====== State ======
-let me={lvl:1,hp:100,mh:100,mp:50,mm:50,xp:0,atk:10,def:5,name:'',x:400,y:300,ready:false,prevAtk:10,prevDef:5};
+let me={lvl:1,hp:100,mh:100,mp:50,mm:50,xp:0,atk:10,def:5,name:'',x:400,y:300,ready:false,prevAtk:10,prevDef:5,gold:0};
 let ents={},inv=[],eq={},qst=[],sel=0,keys={},vx=0,vy=0,parties={},cd={},drops={},sortMode='type',invFilter='all';
 let npcQuests={}; // NPC -> quest ID list from 9002
 const IC={1:'🟢',2:'🔵',3:'💀',4:'🟣',5:'🟤'};
@@ -187,8 +187,12 @@ function getInvSorted(){
 async function onD(data){let off=0;while(off+H<=data.length){if(data[off]!==M[0]||data[off+1]!==M[1]){off++;continue}const v=new DataView(data.buffer,data.byteOffset,data.byteLength);const bl=v.getUint16(off+6,false);if(off+H+bl>data.length)break;const mid=v.getUint16(off+4,false);try{const p=await D(data.subarray(off+H,off+H+bl));const j=JSON.parse(new TextDecoder().decode(p));h(mid,j)}catch(e){}off+=H+bl}}
 function h(m,b){switch(m){
 case 5001:{
-  const oldAtk=me.atk,oldDef=me.def;
+  const oldAtk=me.atk,oldDef=me.def,oldGold=me.gold;
   me.hp=b.hp??me.hp;me.mh=b.maxHp??me.mh;me.mp=b.mp??me.mp;me.mm=b.maxMp??me.mm;
+  if(b.gold!==undefined){me.gold=b.gold;if(b.gold!==oldGold)flashStat('gd',b.gold>oldGold)}
+  // v0.6: 传送
+  if(b.transported){me.mapId=b.mapId||1;S('📍 '+b.mapName);L('📍','传送到 '+b.mapName);}
+  if(b.bgColor)document.getElementById('wrap').style.background=b.bgColor;
   if(b.level){me.lvl=b.level;me.xp=b.exp||0;me.atk=b.atk||me.atk;me.def=b.def||me.def;me.name=b.name||me.name;me.x=b.x||me.x;me.y=b.y||me.y;if(!me.ready){me.ready=true;S("就绪")}}
   // 装备实时反映战斗力 — 属性变化时闪烁
   if(b.atk!==undefined&&b.atk!==oldAtk){me.atk=b.atk;flashStat('at',b.atk>oldAtk)}
@@ -200,7 +204,25 @@ case 5002:if(b.gained!=null){if(b.exp!=null)me.xp=b.exp;if(b.level&&b.level>me.l
 case 5003:inv=b.items||[];R();break;
 case 5004:eq=b;R();break;
 case 5005:qst=b.quests||[];R();break;
-case 5006:{if(b.name)L('💬','NPC: '+b.name+' — '+(b.dialog||''));break}
+case 5006:{if(b.name)L('💬','NPC: '+b.name+' — '+(b.dialog||''));
+  // v0.6: 商店界面
+  if(b.type==='merchant'||b.shop){
+    const dlg=document.getElementById('dlg');
+    document.getElementById('dt').textContent='🏪 '+ (b.name||'商店');
+    document.getElementById('dc').textContent=b.dialog||'';
+    let shopItems=b.shop||[];
+    let sh='<div style="max-height:300px;overflow-y:auto">';
+    shopItems.forEach(s=>{
+      sh+=`<div class="q"><span>${s.icon||'📦'} ${s.name||'物品'+s.itemId}</span><span>💰${s.price}金`;
+      if(s.stock!==null&&s.stock!==undefined)sh+=` (库存:${s.stock})`;
+      sh+=` <button onclick="buyShop(${s.itemId},1)">购买</button></span></div>`;
+    });
+    sh+='</div><div style="margin-top:6px;font-size:11px;color:#888">出售栏: 点击背包中的物品卖回给商店 (70%价格)</div>';
+    document.getElementById('dq').innerHTML=sh;
+    document.getElementById('da').innerHTML='<button onclick="cls()">关闭</button>';
+    dlg.style.display='block';inDlg=true;
+  }
+  break}
 case 9002:{
   if(b.npcs)b.npcs.forEach(s=>{const j=JSON.parse(s);ents[j.id]={t:'npc',name:j.name,x:j.x,y:j.y,tx:j.x,ty:j.y,npcType:j.type||j.npcType,dialog:j.dialog};if(j.quests)npcQuests[j.id]=j.quests});
   if(b.mobs)b.mobs.forEach(s=>{const j=JSON.parse(s);ents[j.entityId]={t:'mob',name:j.name,x:j.x,y:j.y,tx:j.x,ty:j.y,hp:j.hp,mh:j.maxHp,level:j.level,icon:IC[j.defId]||'👹'}});
@@ -239,6 +261,7 @@ function R(){
   document.getElementById('mpb').style.width=(me.mp/me.mm*100)+'%';document.getElementById('mpt').textContent=me.mp+'/'+me.mm;
   document.getElementById('xpb').style.width=(me.xp/(me.lvl*me.lvl*100)*100)+'%';document.getElementById('xpt').textContent=me.xp+'/'+(me.lvl*me.lvl*100);
   document.getElementById('nm').textContent=me.name;document.getElementById('lv').textContent=me.lvl;
+  document.getElementById('gd').textContent=me.gold||0;
   const eb=EQ_BONUS();
   document.getElementById('at').textContent=(me.atk+eb.atk)+' (+'+eb.atk+')';
   document.getElementById('df').textContent=(me.def+eb.def)+' (+'+eb.def+')';
@@ -311,7 +334,11 @@ document.addEventListener('keydown',e=>{const ck=e.code,ky=e.key.toLowerCase();
   else if(ky==='t')acpt();
 });
 document.addEventListener('keyup',e=>{const c=e.code,k=e.key.toLowerCase();if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(c))e.preventDefault();keys[k]=false});
-document.getElementById('cin').addEventListener('keydown',async e=>{if(e.key==='Enter'){const t=document.getElementById('cin').value.trim();if(t){await sd(2001,{from:uid,text:t,channel:'world'});document.getElementById('cin').value=''}}});
+document.getElementById('cin').addEventListener('keydown',async e=>{if(e.key==='Enter'){const t=document.getElementById('cin').value.trim();if(t){
+  // v0.6: 私聊 /w playername message
+  if(t.startsWith('/w ')){const p=t.indexOf(' ',4);if(p>0){const name=t.substring(3,p).trim(),text=t.substring(p+1);const pe=Object.entries(ents).find(([k,v])=>v.t==='player'&&v.name===name);if(pe){await sd(2001,{from:uid,text:text,channel:'private',targetUid:parseInt(pe[0])});L('💬','私聊 → '+name+': '+text)}else L('⚠','玩家 '+name+' 不在视野内')}else L('⚠','用法: /w 玩家名 消息')}
+  else {await sd(2001,{from:uid,text:t,channel:'world'})}
+  document.getElementById('cin').value=''}});
 
 // ====== Actions ======
 function nm(){let b=null,bd=1e9;Object.entries(ents).forEach(([id,e])=>{if(e.t==='mob'&&e.hp>0){const d=Math.hypot(e.x-me.x,e.y-me.y);if(d<bd){bd=d;b=Number(id)}}});return b}
@@ -337,9 +364,13 @@ async function talk(){
       html+=`<div class="q"><span>📜 ${qd.n} — ${qd.d}</span>${has?(done?`<button class="ok" onclick="sd(1006,{questId:${qid}});cls()">提交</button>`:`<span style="color:#27ae60">${has.progress}/${qd.cnt}</span>`):`<button onclick="sd(1005,{questId:${qid}});L('📜','接取任务: ${qd.n}');cls()">接取</button>`}</div>`;
     });
   }else if(e.npcType==='merchant'){
-    html='<div class="q"><span>🏪 商店</span><span style="color:#888">(开发中)</span></div>';
+    // v0.6: 发送NPC交互获取商店数据
+    sd(1007,{npcId:nid});cls();return;
   }else if(e.npcType==='healer'){
     html='<div class="q"><span>💚 恢复全部生命和法力</span><span style="color:#2ecc71">已恢复!</span></div>';
+  }else if(e.npcType&&e.npcType.startsWith('portal')){
+    // 传送门 — 发送NPC交互
+    sd(1007,{npcId:nid});cls();return;
   }
   document.getElementById('dq').innerHTML=html||'<div style="color:#888">该NPC暂无功能</div>';
   dlg.style.display='block';inDlg=true;
@@ -347,6 +378,9 @@ async function talk(){
 function cls(){document.getElementById('dlg').style.display='none';inDlg=false}
 async function pick(){let b=null,bd=1e9;Object.values(drops).forEach(d=>{const dist=Math.hypot(d.x-me.x,d.y-me.y);if(dist<bd&&dist<80){bd=dist;b=d}});if(b){L('💎','拾取 '+GI(b.itemId).n+'!');await sd(1003,{dropId:b.dropId});delete drops[b.dropId]}else L('💎','附近没有掉落物 (按G)')}
 async function acpt(){await sd(2003,{})}
+// v0.6: 商店
+async function buyShop(id,c){await sd(1009,{itemId:id,count:c});L('🛒','购买物品 '+GI(id).n+' x'+c)}
+async function sellItem(id){const h=inv.find(i=>i.itemId===id);const c=h?h.count:1;await sd(1010,{itemId:id,count:1});L('🛒','出售物品 '+GI(id).n)}
 
 // ====== Startup ======
 async function main(){

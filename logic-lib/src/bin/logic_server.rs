@@ -125,6 +125,33 @@ const NPC_DEFS: &[NpcDef] = &[
     NpcDef { id: 3, name: "治疗师·赵六", x: 800.0, y: 600.0, npc_type: "healer", dialog: "需要治疗吗？我可以免费为你恢复全部生命和法力。" },
     NpcDef { id: 4, name: "铁匠·孙七",   x: 1200.0, y: 800.0, npc_type: "merchant", dialog: "好剑配英雄！我可以帮你强化装备。" },
     NpcDef { id: 5, name: "公会会长",    x: 400.0, y: 1000.0, npc_type: "quest_giver", dialog: "想加入冒险者公会吗？先证明你的实力！" },
+    // v0.6: 传送门 — 前往其他地图
+    NpcDef { id: 6, name: "🌲 森林传送门", x: 1550.0, y: 600.0, npc_type: "portal", dialog: "前往幽暗森林... (地图2)" },
+    NpcDef { id: 7, name: "🏜 沙漠传送门", x: 50.0, y: 600.0, npc_type: "portal", dialog: "前往烈日沙漠... (地图3)" },
+    NpcDef { id: 8, name: "💀 地下城入口", x: 800.0, y: 1150.0, npc_type: "portal", dialog: "前往古老地下城... (地图4)" },
+    // v0.6: 地图2(森林) 的返回传送门
+    NpcDef { id: 9, name: "🏘 返回新手村", x: 50.0, y: 400.0, npc_type: "portal_map2", dialog: "返回新手村... (地图1)" },
+    // v0.6: 地图3(沙漠) 的返回传送门
+    NpcDef { id: 10, name: "🏘 返回新手村", x: 50.0, y: 400.0, npc_type: "portal_map3", dialog: "返回新手村... (地图1)" },
+    // v0.6: 地图4(地下城) 的返回传送门
+    NpcDef { id: 11, name: "🏘 返回新手村", x: 50.0, y: 400.0, npc_type: "portal_map4", dialog: "返回新手村... (地图1)" },
+];
+
+/// v0.6 地图定义
+struct MapDef {
+    id: u32,
+    name: &'static str,
+    bounds: (f32, f32, f32, f32), // (min_x, min_y, max_x, max_y)
+    bg_color: &'static str,        // CSS color for client rendering
+    mob_types: &'static [u32],     // 该地图生成的怪物类型
+    portal_npc_ids: &'static [u32], // 该地图的传送门 NPC ID
+}
+
+const MAP_DEFS: &[MapDef] = &[
+    MapDef { id: 1, name: "新手村",   bounds: (0.0, 0.0, 1600.0, 1200.0), bg_color: "#0d0d20",   mob_types: &[1, 2],       portal_npc_ids: &[6, 7, 8] },
+    MapDef { id: 2, name: "幽暗森林", bounds: (0.0, 0.0, 1600.0, 1200.0), bg_color: "#0d1a0d",   mob_types: &[2, 3, 4],    portal_npc_ids: &[9] },
+    MapDef { id: 3, name: "烈日沙漠", bounds: (0.0, 0.0, 1600.0, 1200.0), bg_color: "#1a1505",   mob_types: &[3, 4, 5],    portal_npc_ids: &[10] },
+    MapDef { id: 4, name: "古老地下城", bounds: (0.0, 0.0, 1600.0, 1200.0), bg_color: "#0a0a0a", mob_types: &[4, 5],       portal_npc_ids: &[11] },
 ];
 
 /// 物品定义
@@ -153,6 +180,26 @@ const ITEM_DEFS: &[ItemDef] = &[
     ItemDef { id: 8, name: "全恢复药水", item_type: "potion",    value: 150,  icon: "💎", hp_restore: 100,mp_restore: 50, atk_bonus: 0,  def_bonus: 0  },
     ItemDef { id: 9, name: "史莱姆凝胶", item_type: "material",  value: 10,   icon: "🟢", hp_restore: 0,  mp_restore: 0,  atk_bonus: 0,  def_bonus: 0  },
     ItemDef { id: 10,name: "哥布林耳朵", item_type: "material",  value: 15,   icon: "👂", hp_restore: 0,  mp_restore: 0,  atk_bonus: 0,  def_bonus: 0  },
+];
+
+// ── 商店数据 (v0.6) ──
+#[derive(Debug, Clone)]
+struct ShopItem {
+    item_id: u32,
+    price: u32,     // 金币购买价格
+    sell_price: u32, // 卖回价格 (70%)
+    stock: Option<u32>, // None = 无限存货
+}
+
+const SHOP_ITEMS: &[ShopItem] = &[
+    ShopItem { item_id: 6,  price: 50,  sell_price: 35,  stock: None }, // 生命药水
+    ShopItem { item_id: 7,  price: 50,  sell_price: 35,  stock: None }, // 法力药水
+    ShopItem { item_id: 8,  price: 150, sell_price: 100, stock: Some(5) }, // 全恢复药水
+    ShopItem { item_id: 1,  price: 100, sell_price: 70,  stock: None }, // 铁剑
+    ShopItem { item_id: 2,  price: 300, sell_price: 200, stock: Some(3) }, // 钢剑
+    ShopItem { item_id: 3,  price: 150, sell_price: 100, stock: None }, // 皮甲
+    ShopItem { item_id: 4,  price: 400, sell_price: 280, stock: Some(3) }, // 铁甲
+    ShopItem { item_id: 5,  price: 200, sell_price: 140, stock: Some(5) }, // 力量戒指
 ];
 
 /// 任务定义
@@ -214,6 +261,9 @@ struct PlayerState {
     last_x: f32,                 // 上次报告的 X 坐标
     last_y: f32,                 // 上次报告的 Y 坐标
     violation_count: u32,        // 累计违规次数
+    // ── 经济系统 (v0.6) ──
+    current_map: u32,            // 当前地图 ID (1=新手村, 2=森林, 3=沙漠, 4=地下城)
+    gold: u32,                   // 金币
 }
 
 impl PlayerState {
@@ -245,6 +295,8 @@ impl PlayerState {
             last_x: x,
             last_y: y,
             violation_count: 0,
+            current_map: 1,
+            gold: 0,
         }
     }
 
@@ -293,6 +345,7 @@ impl PlayerState {
             "y": self.y,
             "atk": self.total_atk(),
             "def": self.total_def(),
+            "gold": self.gold,
         })
         .to_string()
     }
@@ -992,6 +1045,20 @@ impl GameState {
                 messages.extend(self.handle_use_item(uid, item_id));
             }
 
+            // ── 商店购买 (v0.6) ──
+            1009 => {
+                let item_id = json.get("itemId").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                let count = json.get("count").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+                messages.extend(self.handle_shop_buy(uid, item_id, count));
+            }
+
+            // ── 商店卖出 (v0.6) ──
+            1010 => {
+                let item_id = json.get("itemId").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                let count = json.get("count").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+                messages.extend(self.handle_shop_sell(uid, item_id, count));
+            }
+
             // ── 队伍邀请 ──
             2002 => {
                 let target = json.get("targetUid").and_then(|v| v.as_u64()).unwrap_or(0);
@@ -1057,13 +1124,28 @@ impl GameState {
                 let ack_json = serde_json::json!({ "msgId": msg_id }).to_string();
                 messages.push(dm(uid, 7001, ack_json, 1));
 
-                let broadcast_json = serde_json::json!({
-                    "from": uid,
-                    "fromName": from_name,
-                    "text": text,
-                })
-                .to_string();
-                messages.push(dm(0, 7002, broadcast_json, 1));
+                // v0.6: 私聊 — 发送到指定目标而非广播
+                let channel = json.get("channel").and_then(|v| v.as_str()).unwrap_or("world");
+                if channel == "private" {
+                    let target = json.get("targetUid").and_then(|v| v.as_u64()).unwrap_or(0);
+                    if target > 0 && self.players.contains_key(&target) {
+                        let whisp = serde_json::json!({
+                            "from": uid,
+                            "fromName": from_name,
+                            "text": text,
+                            "channel": "private",
+                        }).to_string();
+                        messages.push(dm(target, 7002, whisp, 1));
+                    }
+                } else {
+                    let broadcast_json = serde_json::json!({
+                        "from": uid,
+                        "fromName": from_name,
+                        "text": text,
+                        "channel": channel,
+                    }).to_string();
+                    messages.push(dm(0, 7002, broadcast_json, 1));
+                }
             }
 
             // ── 移动 ──
@@ -1336,10 +1418,13 @@ impl GameState {
                     self.drops.insert(drop.drop_id, drop.clone());
                 }
 
-                // 给击杀者加经验
+                // 给击杀者加经验和金币
                 if let Some(mut p) = self.players.get_mut(&uid) {
                     let _old_level = p.level;
                     let leveled_up = p.add_exp(mob_exp);
+                    // v0.6: 击杀奖励金币 = 怪物等级 * 5
+                    let gold_reward = (get_mob_def(mob_def_id).map(|d| d.level).unwrap_or(1) * 5) as u32;
+                    p.gold += gold_reward;
 
                     // 更新任务进度
                     let quest_updated = p.update_quest_progress(mob_def_id);
@@ -1752,17 +1837,67 @@ impl GameState {
             _ => {}
         }
 
-        let dialog_json = serde_json::json!({
+        let mut dialog_data = serde_json::json!({
             "npcId": npc.id,
             "name": npc.name,
             "dialog": npc.dialog,
             "type": npc.npc_type,
             "options": options,
-        })
-        .to_string();
+        });
+
+        // v0.6: 商人附加商品列表
+        if npc.npc_type == "merchant" {
+            let shop_items: Vec<serde_json::Value> = SHOP_ITEMS.iter().map(|s| {
+                let def = get_item_def(s.item_id);
+                serde_json::json!({
+                    "itemId": s.item_id,
+                    "name": def.map(|d| d.name).unwrap_or("?"),
+                    "icon": def.map(|d| d.icon).unwrap_or("?"),
+                    "price": s.price,
+                    "sellPrice": s.sell_price,
+                    "stock": s.stock,
+                })
+            }).collect();
+            dialog_data["shop"] = serde_json::json!(shop_items);
+        }
+
+        let dialog_json = dialog_data.to_string();
         messages.push(dm(uid, 5006, dialog_json, 1));
 
         // 治疗师直接治疗
+        // v0.6: 传送门 — 切换地图
+        if npc.npc_type.starts_with("portal") {
+            let target_map: u32 = if npc.npc_type == "portal" {
+                // 新手村的传送门 → 按NPC ID决定目标
+                match npc.id {
+                    6 => 2,  // 森林
+                    7 => 3,  // 沙漠
+                    8 => 4,  // 地下城
+                    _ => 1,
+                }
+            } else {
+                // portal_mapX → 返回新手村
+                1
+            };
+            if let Some(mut p) = self.players.get_mut(&uid) {
+                p.current_map = target_map;
+                // 传送后发送完整状态和实体列表
+                let map = MAP_DEFS.iter().find(|m| m.id == target_map).unwrap();
+                let teleport_json = serde_json::json!({
+                    "uid": uid,
+                    "mapId": target_map,
+                    "mapName": map.name,
+                    "bgColor": map.bg_color,
+                    "x": 400.0, "y": 400.0,
+                    "hp": p.hp, "maxHp": p.max_hp,
+                    "mp": p.mp, "maxMp": p.max_mp,
+                    "transported": true,
+                }).to_string();
+                messages.push(dm(uid, 5001, teleport_json, 2));
+            }
+        }
+
+        // healer 治疗
         if npc.npc_type == "healer" {
             if let Some(mut p) = self.players.get_mut(&uid) {
                 p.hp = p.max_hp;
@@ -1816,6 +1951,81 @@ impl GameState {
             messages.push(dm(uid, 5001, p.to_stats_json(), 1));
         }
 
+        messages
+    }
+
+    // ════════════════════════════════════════════════════════════
+    // 商店系统 (v0.6)
+    // ════════════════════════════════════════════════════════════
+
+    /// 从商店购买物品
+    fn handle_shop_buy(&self, uid: u64, item_id: u32, count: u32) -> Vec<DownstreamMessage> {
+        let mut messages = Vec::new();
+        // 查找商品
+        let shop_item = match SHOP_ITEMS.iter().find(|s| s.item_id == item_id) {
+            Some(s) => s,
+            None => {
+                messages.push(dm(uid, 5006, serde_json::json!({"name":"商店","dialog":"该物品不在商店中","type":"merchant"}).to_string(), 0));
+                return messages;
+            }
+        };
+        // 检查库存
+        if let Some(stock) = shop_item.stock {
+            if count > stock {
+                messages.push(dm(uid, 5006, serde_json::json!({"name":"商店","dialog":"库存不足!","type":"merchant"}).to_string(), 0));
+                return messages;
+            }
+        }
+        let total_cost = shop_item.price * count;
+        // 扣金币 + 加物品
+        if let Some(mut p) = self.players.get_mut(&uid) {
+            if p.gold < total_cost {
+                messages.push(dm(uid, 5006, serde_json::json!({"name":"商店","dialog":format!("金币不足! 需要 {} 金", total_cost),"type":"merchant"}).to_string(), 0));
+                return messages;
+            }
+            p.gold -= total_cost;
+            // 添加物品到背包
+            if let Some(pos) = p.inventory.iter().position(|(id, _)| *id == item_id) {
+                p.inventory[pos].1 += count as u32;
+            } else {
+                p.inventory.push((item_id, count as u32));
+            }
+            let item_name = get_item_def(item_id).map(|d| d.name).unwrap_or("物品");
+            messages.push(dm(uid, 5006, serde_json::json!({"name":"商店","dialog":format!("购买 {} x{} 成功! 花费 {} 金币", item_name, count, total_cost),"type":"merchant"}).to_string(), 0));
+            messages.push(dm(uid, 5003, p.to_inventory_json(), 1));
+            messages.push(dm(uid, 5001, p.to_stats_json(), 1));
+        }
+        messages
+    }
+
+    /// 出售物品给商店
+    fn handle_shop_sell(&self, uid: u64, item_id: u32, count: u32) -> Vec<DownstreamMessage> {
+        let mut messages = Vec::new();
+        let shop_item = match SHOP_ITEMS.iter().find(|s| s.item_id == item_id) {
+            Some(s) => s,
+            None => {
+                messages.push(dm(uid, 5006, serde_json::json!({"name":"商店","dialog":"商店不收这种物品","type":"merchant"}).to_string(), 0));
+                return messages;
+            }
+        };
+        let total_earned = shop_item.sell_price * count;
+        if let Some(mut p) = self.players.get_mut(&uid) {
+            // 检查是否有足够数量
+            if let Some(pos) = p.inventory.iter().position(|(id, c)| *id == item_id && *c >= count as u32) {
+                p.inventory[pos].1 -= count as u32;
+                if p.inventory[pos].1 == 0 {
+                    p.inventory.remove(pos);
+                }
+            } else {
+                messages.push(dm(uid, 5006, serde_json::json!({"name":"商店","dialog":"背包中数量不足!","type":"merchant"}).to_string(), 0));
+                return messages;
+            }
+            p.gold += total_earned;
+            let item_name = get_item_def(item_id).map(|d| d.name).unwrap_or("物品");
+            messages.push(dm(uid, 5006, serde_json::json!({"name":"商店","dialog":format!("出售 {} x{} 成功! 获得 {} 金币", item_name, count, total_earned),"type":"merchant"}).to_string(), 0));
+            messages.push(dm(uid, 5003, p.to_inventory_json(), 1));
+            messages.push(dm(uid, 5001, p.to_stats_json(), 1));
+        }
         messages
     }
 
