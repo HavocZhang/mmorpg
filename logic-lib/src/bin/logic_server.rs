@@ -85,6 +85,30 @@ const SKILLS: &[SkillDef] = &[
     SkillDef { id: 5, name: "治疗术",   dmg_multiplier: 0.0,  mp_cost: 25, cooldown_ms: 5000, range: 0.0,   icon: "💚" },
 ];
 
+// ── 职业与天赋 (v0.6) ──
+struct ClassDef {
+    id: u8, name: &'static str, icon: &'static str,
+    atk_bonus: i32, def_bonus: i32, hp_bonus: i32,
+}
+const CLASS_DEFS: &[ClassDef] = &[
+    ClassDef { id: 1, name: "战士", icon: "⚔", atk_bonus: 5, def_bonus: 10, hp_bonus: 50 },
+    ClassDef { id: 2, name: "法师", icon: "🔮", atk_bonus: 15, def_bonus: 2, hp_bonus: -20 },
+    ClassDef { id: 3, name: "弓手", icon: "🏹", atk_bonus: 10, def_bonus: 5, hp_bonus: 0 },
+];
+
+struct TalentDef { id: u32, name: &'static str, class: u8, atk: i32, def: i32, hp: i32, icon: &'static str }
+const TALENTS: &[TalentDef] = &[
+    TalentDef { id: 1, name: "剑术精通", class: 1, atk: 5, def: 0, hp: 0, icon: "⚔" },
+    TalentDef { id: 2, name: "铁壁",     class: 1, atk: 0, def: 5, hp: 0, icon: "🛡" },
+    TalentDef { id: 3, name: "坚韧",     class: 1, atk: 0, def: 0, hp: 30, icon: "❤" },
+    TalentDef { id: 4, name: "法术强化", class: 2, atk: 8, def: 0, hp: 0, icon: "💥" },
+    TalentDef { id: 5, name: "魔力护盾", class: 2, atk: 0, def: 3, hp: 0, icon: "🔮" },
+    TalentDef { id: 6, name: "法力潮汐", class: 2, atk: 0, def: 0, hp: 20, icon: "✨" },
+    TalentDef { id: 7, name: "精准射击", class: 3, atk: 6, def: 0, hp: 0, icon: "🎯" },
+    TalentDef { id: 8, name: "闪避步法", class: 3, atk: 0, def: 4, hp: 0, icon: "💨" },
+    TalentDef { id: 9, name: "猎人直觉", class: 3, atk: 0, def: 0, hp: 25, icon: "👁" },
+];
+
 /// 怪物定义
 struct MobDef {
     id: u32,
@@ -282,6 +306,10 @@ struct PlayerState {
     // ── 经济系统 (v0.6) ──
     current_map: u32,            // 当前地图 ID (1=新手村, 2=森林, 3=沙漠, 4=地下城)
     gold: u32,                   // 金币
+    // ── 技能树 (v0.6) ──
+    class: u8,         // 0=未选择, 1=战士, 2=法师, 3=弓手
+    talent_pts: u32,   // 可用天赋点
+    talents: Vec<u32>, // 已激活天赋
 }
 
 impl PlayerState {
@@ -315,6 +343,9 @@ impl PlayerState {
             violation_count: 0,
             current_map: 1,
             gold: 0,
+            class: 0,
+            talent_pts: 0,
+            talents: Vec::new(),
         }
     }
 
@@ -364,6 +395,10 @@ impl PlayerState {
             "atk": self.total_atk(),
             "def": self.total_def(),
             "gold": self.gold,
+            "class": self.class,
+            "classIcon": CLASS_DEFS.iter().find(|c| c.id == self.class).map(|c| c.icon).unwrap_or(""),
+            "talentPts": self.talent_pts,
+            "talents": self.talents.clone(),
         })
         .to_string()
     }
@@ -477,6 +512,7 @@ impl PlayerState {
             self.max_mp += 10;
             self.hp = self.max_hp;
             self.mp = self.max_mp;
+            self.talent_pts += 1; // v0.6: 每级获得1天赋点
             self.atk += 5;
             self.def += 2;
             true
@@ -1242,6 +1278,61 @@ impl GameState {
                     messages.push(dm(uid, 7002, serde_json::json!({"type":"duel_start","against":challenger,"againstName":tname}).to_string(), 1));
                     messages.push(dm(challenger, 7002, serde_json::json!({"type":"duel_start","against":uid,"againstName":cname}).to_string(), 1));
                 }
+            }
+
+            // ── 技能树 (v0.6) ──
+            2701 => { // 选择职业
+                let class_id = json.get("class").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
+                if class_id < 1 || class_id > 3 {
+                    messages.push(dm(uid, 7001, r#"{"error":"无效职业"}"#.to_string(), 0));
+                } else if let Some(mut p) = self.players.get_mut(&uid) {
+                    if p.class > 0 {
+                        messages.push(dm(uid, 7001, r#"{"error":"已选择职业"}"#.to_string(), 0));
+                    } else {
+                        p.class = class_id;
+                        if let Some(cd) = CLASS_DEFS.iter().find(|c| c.id == class_id) {
+                            p.max_hp = 100 + cd.hp_bonus;
+                            p.hp = p.max_hp;
+                        }
+                        p.talent_pts = p.level; // 每级 1 天赋点
+                        messages.push(dm(uid, 5001, p.to_stats_json(), 2));
+                        let cn = CLASS_DEFS.iter().find(|c| c.id == class_id).map(|c| c.name).unwrap_or("");
+                        messages.push(dm(uid, 7001, format!(r#"{{"type":"class_chosen","class":"{}","talentPts":{}}}"#, cn, p.talent_pts), 1));
+                    }
+                }
+            }
+            2702 => { // 点天赋
+                let tid = json.get("talentId").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                if let Some(td) = TALENTS.iter().find(|t| t.id == tid) {
+                    if let Some(mut p) = self.players.get_mut(&uid) {
+                        if p.class != td.class {
+                            messages.push(dm(uid, 7001, r#"{"error":"天赋不属于当前职业"}"#.to_string(), 0));
+                        } else if p.talent_pts == 0 {
+                            messages.push(dm(uid, 7001, r#"{"error":"天赋点不足"}"#.to_string(), 0));
+                        } else if p.talents.contains(&tid) {
+                            messages.push(dm(uid, 7001, r#"{"error":"已激活该天赋"}"#.to_string(), 0));
+                        } else {
+                            p.talent_pts -= 1;
+                            p.talents.push(tid);
+                            messages.push(dm(uid, 5001, p.to_stats_json(), 2));
+                            messages.push(dm(uid, 7001, format!(r#"{{"type":"talent_learned","name":"{}","talentPts":{}}}"#, td.name, p.talent_pts), 1));
+                        }
+                    }
+                }
+            }
+
+            // ── 排行榜 (v0.7) ──
+            2800 => {
+                let typ = json.get("type").and_then(|v| v.as_str()).unwrap_or("level");
+                let mut entries: Vec<(u64, String, u32)> = self.players.iter()
+                    .map(|p| { let v = match typ { "gold" => p.gold, _ => p.level }; (p.uid, p.name.clone(), v) })
+                    .collect();
+                entries.sort_by(|a, b| b.2.cmp(&a.2));
+                entries.truncate(20);
+                let list: Vec<serde_json::Value> = entries.iter().enumerate().map(|(i, (pid, pname, val))| serde_json::json!({
+                    "rank": i + 1, "uid": pid, "name": pname, "value": val
+                })).collect();
+                messages.push(dm(uid, 2801, serde_json::json!({"type":typ,"entries":list}).to_string(), 1));
             }
 
             // ── 移动 ──
