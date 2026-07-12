@@ -2,6 +2,7 @@
 //!
 //! 显示:
 //! - 顶部 HUD: 玩家名/等级/HP/MP/经验条/金币/坐标
+//! - 居中状态提示: 连接中/等待登录/可游玩
 //! - 背包面板 (按 I 切换)
 //! - 任务面板 (按 Q 切换)
 //! - NPC 对话框
@@ -24,6 +25,10 @@ pub struct UiRoot;
 /// HUD 状态文本 (顶部栏)
 #[derive(Component)]
 pub struct HudText;
+
+/// 居中状态提示文本 (连接中/等待登录)
+#[derive(Component)]
+pub struct CenterStatusText;
 
 /// HP 条填充 (绿色)
 #[derive(Component)]
@@ -65,11 +70,11 @@ pub struct DialogText;
 #[derive(Component)]
 pub struct DialogOptions;
 
-/// 背包内容文本
+/// 背包内容容器
 #[derive(Component)]
 pub struct InventoryContent;
 
-/// 任务内容文本
+/// 任务内容容器
 #[derive(Component)]
 pub struct QuestContent;
 
@@ -95,20 +100,49 @@ pub fn setup_ui(mut commands: Commands) {
             UiRoot,
         ))
         .with_children(|parent| {
-            // ── 顶部 HUD 状态栏 ──
+            // ── 顶部 HUD 状态栏 (用 TextBundle 保证有 Text 组件) ──
             parent.spawn((
-                NodeBundle {
-                    style: Style {
-                        width: Val::Percent(100.0),
-                        height: Val::Px(50.0),
-                        padding: UiRect::all(Val::Px(8.0)),
-                        flex_direction: FlexDirection::Column,
+                TextBundle::from_section(
+                    "Rust MMO - 启动中...",
+                    TextStyle {
+                        font_size: 14.0,
+                        color: Color::srgb(0.95, 0.95, 0.95),
                         ..default()
                     },
-                    background_color: Color::srgba(0.1, 0.1, 0.2, 0.9).into(),
+                )
+                .with_style(Style {
+                    width: Val::Percent(100.0),
+                    height: Val::Px(40.0),
+                    padding: UiRect::all(Val::Px(8.0)),
                     ..default()
-                },
+                })
+                .with_background_color(Color::srgba(0.1, 0.1, 0.2, 0.9)),
                 HudText,
+            ));
+
+            // ── 居中状态提示 (连接/登录中) ──
+            parent.spawn((
+                TextBundle::from_section(
+                    "正在连接服务器...",
+                    TextStyle {
+                        font_size: 28.0,
+                        color: Color::srgb(1.0, 1.0, 0.4),
+                        ..default()
+                    },
+                )
+                .with_style(Style {
+                    position_type: PositionType::Absolute,
+                    top: Val::Percent(45.0),
+                    left: Val::Percent(50.0),
+                    margin: UiRect::new(
+                        Val::Percent(-50.0),
+                        Val::Percent(0.0),
+                        Val::Percent(0.0),
+                        Val::Percent(0.0),
+                    ),
+                    ..default()
+                }),
+                CenterStatusText,
             ));
 
             // ── 背包面板 (左下, 默认隐藏) ──
@@ -207,7 +241,7 @@ pub fn setup_ui(mut commands: Commands) {
                         height: Val::Px(200.0),
                         position_type: PositionType::Absolute,
                         right: Val::Px(10.0),
-                        top: Val::Px(60.0),
+                        top: Val::Px(50.0),
                         padding: UiRect::all(Val::Px(8.0)),
                         flex_direction: FlexDirection::Column,
                         display: Display::None,
@@ -291,7 +325,7 @@ pub fn setup_ui(mut commands: Commands) {
                 NodeBundle {
                     style: Style {
                         width: Val::Percent(100.0),
-                        height: Val::Px(30.0),
+                        height: Val::Px(28.0),
                         position_type: PositionType::Absolute,
                         bottom: Val::Px(0.0),
                         padding: UiRect::all(Val::Px(8.0)),
@@ -305,10 +339,10 @@ pub fn setup_ui(mut commands: Commands) {
             ))
             .with_children(|footer| {
                 footer.spawn(TextBundle::from_section(
-                    "WASD移动 | 左键点击攻击/NPC对话/拾取 | I背包 | Q任务 | L战斗日志 | ESC关闭对话",
+                    "WASD移动 | 左键攻击/NPC/拾取 | I背包 | Q任务 | L战斗日志 | ESC关闭对话",
                     TextStyle {
                         font_size: 12.0,
-                        color: Color::srgb(0.6, 0.6, 0.6),
+                        color: Color::srgb(0.7, 0.7, 0.7),
                         ..default()
                     },
                 ));
@@ -330,9 +364,9 @@ pub fn update_hud_system(
     mut text_query: Query<&mut Text, With<HudText>>,
 ) {
     let text = if !conn.connected {
-        "连接中...".to_string()
+        "Rust MMO - 连接中...".to_string()
     } else if !player.logged_in {
-        "已连接，等待登录响应...".to_string()
+        "Rust MMO - 已连接，等待登录响应...".to_string()
     } else {
         let target_str = if let Some(tid) = target.entity_id {
             if let Some(info) = entities.entities.get(&tid) {
@@ -366,6 +400,33 @@ pub fn update_hud_system(
 
     for mut t in text_query.iter_mut() {
         t.sections[0].value = text.clone();
+    }
+}
+
+/// 更新居中状态提示
+pub fn update_center_status_system(
+    player: Res<PlayerState>,
+    conn: Res<ConnectionState>,
+    mut text_query: Query<&mut Text, With<CenterStatusText>>,
+    mut style_query: Query<&mut Style, With<CenterStatusText>>,
+) {
+    let (text, visible) = if !conn.connected {
+        ("正在连接服务器...".to_string(), true)
+    } else if !player.logged_in {
+        ("已连接，等待登录响应...".to_string(), true)
+    } else {
+        (String::new(), false)
+    };
+
+    for mut t in text_query.iter_mut() {
+        t.sections[0].value = text.clone();
+    }
+    for mut style in style_query.iter_mut() {
+        style.display = if visible {
+            Display::Flex
+        } else {
+            Display::None
+        };
     }
 }
 
@@ -404,9 +465,8 @@ pub fn update_inventory_system(
     inventory: Res<Inventory>,
     equipment: Res<Equipment>,
     panels: Res<PanelVisibility>,
-    mut content_query: Query<&mut Text, With<InventoryContent>>,
-    mut commands: Commands,
     content_parent: Query<Entity, With<InventoryContent>>,
+    mut commands: Commands,
 ) {
     if !panels.inventory {
         return;
@@ -421,7 +481,6 @@ pub fn update_inventory_system(
     commands.entity(parent_entity).despawn_descendants();
 
     let mut text = String::new();
-    text.push_str(&format!("金币: (见HUD)\n\n"));
     text.push_str("--- 装备 ---\n");
     let eq = &equipment.data;
     if !eq.weapon.empty {
@@ -467,9 +526,6 @@ pub fn update_inventory_system(
             },
         ));
     });
-
-    // 避免未使用警告
-    let _ = content_query.get_single_mut();
 }
 
 /// 更新任务面板内容
@@ -493,6 +549,7 @@ pub fn update_quest_system(
     let mut text = String::new();
     if quest_log.quests.is_empty() {
         text.push_str("暂无任务\n");
+        text.push_str("\n提示: 点击黄色 NPC 对话接任务");
     } else {
         for q in &quest_log.quests {
             let status = if q.completed { "[可完成]" } else { "[进行中]" };
@@ -523,7 +580,13 @@ pub fn update_combat_log_system(
     if !panels.combat_log {
         return;
     }
-    let text = combat_log.entries.iter().rev().cloned().collect::<Vec<_>>().join("\n");
+    let text = combat_log
+        .entries
+        .iter()
+        .rev()
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("\n");
     for mut t in text_query.iter_mut() {
         t.sections[0].value = text.clone();
     }
@@ -531,11 +594,10 @@ pub fn update_combat_log_system(
 
 /// 更新 NPC 对话框
 pub fn update_dialog_system(
-    panels: Res<PanelVisibility>,
     net: Res<NetworkResource>,
     keyboard: Res<ButtonInput<KeyCode>>,
     mut dialog_panel: Query<&mut Style, With<DialogPanel>>,
-    mut dialog_text: Query<&mut Text, (With<DialogText>, Without<DialogOptions>)>,
+    mut dialog_text: Query<&mut Text, With<DialogText>>,
     options_parent: Query<Entity, With<DialogOptions>>,
     mut commands: Commands,
     mut dialog_state: ResMut<NpcDialogState>,
@@ -629,6 +691,4 @@ pub fn update_dialog_system(
             ));
         }
     });
-
-    let _ = panels;
 }

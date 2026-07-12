@@ -56,10 +56,10 @@ fn main() {
         .init_resource::<resources::TargetEntity>()
         .init_resource::<resources::CombatLog>()
         .init_resource::<resources::PanelVisibility>()
-        // 渲染设置
-        .insert_resource(ClearColor(Color::srgb(0.03, 0.03, 0.08)))
+        // 渲染设置: 深蓝灰色背景
+        .insert_resource(ClearColor(Color::srgb(0.05, 0.06, 0.1)))
         // 启动系统
-        .add_systems(Startup, (setup, ui::setup_ui))
+        .add_systems(Startup, (setup, systems::setup_world, ui::setup_ui))
         // 每帧更新系统
         .add_systems(
             Update,
@@ -77,6 +77,7 @@ fn main() {
                 systems::camera_follow_system,
                 // UI 更新
                 ui::update_hud_system,
+                ui::update_center_status_system,
                 ui::update_panels_system,
                 ui::update_inventory_system,
                 ui::update_quest_system,

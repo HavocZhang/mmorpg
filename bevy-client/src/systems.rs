@@ -9,12 +9,147 @@
 //! - panel_toggle_system: I/Q/L 键切换面板
 //! - render_system: 同步游戏实体到 Bevy ECS (Sprite + HP条 + 名称)
 //! - camera_follow_system: 相机跟随玩家
+//! - setup_world: 创建世界网格背景
 
 use bevy::prelude::*;
 
 use crate::components::*;
 use crate::network::{NetworkCommand, NetworkResource};
 use crate::resources::*;
+
+// ============================================================================
+// 世界初始化
+// ============================================================================
+
+/// 世界网格标记
+#[derive(Component)]
+pub struct WorldGrid;
+
+/// 创建世界背景: 网格 + 边界标记
+pub fn setup_world(mut commands: Commands) {
+    // ── 网格背景 ──
+    // 生成 40x40 的网格线，每格 50px，覆盖 -1000 ~ +1000
+    const GRID_SIZE: i32 = 40;
+    const CELL: f32 = 50.0;
+    const HALF: f32 = (GRID_SIZE as f32) * CELL / 2.0;
+
+    // 竖线
+    for i in 0..=GRID_SIZE {
+        let x = -HALF + i as f32 * CELL;
+        commands.spawn((
+            SpriteBundle {
+                sprite: Sprite {
+                    color: Color::srgba(0.15, 0.15, 0.25, 0.5),
+                    custom_size: Some(Vec2::new(1.0, GRID_SIZE as f32 * CELL)),
+                    ..default()
+                },
+                transform: Transform::from_xyz(x, 0.0, -1.0),
+                ..default()
+            },
+            WorldGrid,
+        ));
+    }
+    // 横线
+    for i in 0..=GRID_SIZE {
+        let y = -HALF + i as f32 * CELL;
+        commands.spawn((
+            SpriteBundle {
+                sprite: Sprite {
+                    color: Color::srgba(0.15, 0.15, 0.25, 0.5),
+                    custom_size: Some(Vec2::new(GRID_SIZE as f32 * CELL, 1.0)),
+                    ..default()
+                },
+                transform: Transform::from_xyz(0.0, y, -1.0),
+                ..default()
+            },
+            WorldGrid,
+        ));
+    }
+
+    // ── 原点标记 (红十字) ──
+    commands.spawn((
+        SpriteBundle {
+            sprite: Sprite {
+                color: Color::srgb(0.5, 0.2, 0.2),
+                custom_size: Some(Vec2::new(40.0, 2.0)),
+                ..default()
+            },
+            transform: Transform::from_xyz(0.0, 0.0, 0.0),
+            ..default()
+        },
+        WorldGrid,
+    ));
+    commands.spawn((
+        SpriteBundle {
+            sprite: Sprite {
+                color: Color::srgb(0.5, 0.2, 0.2),
+                custom_size: Some(Vec2::new(2.0, 40.0)),
+                ..default()
+            },
+            transform: Transform::from_xyz(0.0, 0.0, 0.0),
+            ..default()
+        },
+        WorldGrid,
+    ));
+
+    // ── 世界边界框 ──
+    const WORLD_HALF: f32 = 800.0;
+    let border_color = Color::srgb(0.4, 0.3, 0.2);
+    // 上边
+    commands.spawn((
+        SpriteBundle {
+            sprite: Sprite {
+                color: border_color,
+                custom_size: Some(Vec2::new(WORLD_HALF * 2.0, 4.0)),
+                ..default()
+            },
+            transform: Transform::from_xyz(0.0, WORLD_HALF, 0.0),
+            ..default()
+        },
+        WorldGrid,
+    ));
+    // 下边
+    commands.spawn((
+        SpriteBundle {
+            sprite: Sprite {
+                color: border_color,
+                custom_size: Some(Vec2::new(WORLD_HALF * 2.0, 4.0)),
+                ..default()
+            },
+            transform: Transform::from_xyz(0.0, -WORLD_HALF, 0.0),
+            ..default()
+        },
+        WorldGrid,
+    ));
+    // 左边
+    commands.spawn((
+        SpriteBundle {
+            sprite: Sprite {
+                color: border_color,
+                custom_size: Some(Vec2::new(4.0, WORLD_HALF * 2.0)),
+                ..default()
+            },
+            transform: Transform::from_xyz(-WORLD_HALF, 0.0, 0.0),
+            ..default()
+        },
+        WorldGrid,
+    ));
+    // 右边
+    commands.spawn((
+        SpriteBundle {
+            sprite: Sprite {
+                color: border_color,
+                custom_size: Some(Vec2::new(4.0, WORLD_HALF * 2.0)),
+                ..default()
+            },
+            transform: Transform::from_xyz(WORLD_HALF, 0.0, 0.0),
+            ..default()
+        },
+        WorldGrid,
+    ));
+
+    info!("世界网格已生成 ({}x{}, 边界 {}x{})", GRID_SIZE, GRID_SIZE, WORLD_HALF * 2.0, WORLD_HALF * 2.0);
+}
 
 // ============================================================================
 // 服务器消息处理
@@ -327,8 +462,6 @@ pub fn handle_server_message(
 }
 
 /// 解析 NPC 对话选项 JSON
-///
-/// 格式: [{"label":"接受任务","questId":1,"type":"accept"}, ...]
 fn parse_dialog_options(options_json: &str, _npc_id: u32) -> Vec<NpcDialogOption> {
     if options_json.is_empty() {
         return vec![NpcDialogOption {
@@ -509,13 +642,13 @@ pub fn mouse_input_system(
     let game_x = world_pos.x;
     let game_y = -world_pos.y;
 
-    // 查找最近的实体 (优先级: 怪物 > NPC > 掉落物), 范围 30px
+    // 查找最近的实体 (优先级: 怪物 > NPC > 掉落物), 范围 40px
     let mut best_ent: Option<(u64, f32, bool)> = None; // (id, dist, is_mob)
     for (eid, info) in &entities.entities {
         let dx = info.x - game_x;
         let dy = info.y - game_y;
         let dist = (dx * dx + dy * dy).sqrt();
-        if dist < 30.0 {
+        if dist < 40.0 {
             let is_mob = !info.is_npc();
             if best_ent.is_none()
                 || (is_mob && !best_ent.unwrap().2)
@@ -532,7 +665,7 @@ pub fn mouse_input_system(
         let dx = drop.x - game_x;
         let dy = drop.y - game_y;
         let dist = (dx * dx + dy * dy).sqrt();
-        if dist < 25.0 && (best_drop.is_none() || dist < best_drop.unwrap().1) {
+        if dist < 30.0 && (best_drop.is_none() || dist < best_drop.unwrap().1) {
             best_drop = Some((*did, dist));
         }
     }
@@ -615,10 +748,8 @@ pub fn panel_toggle_system(
     if keyboard.just_pressed(KeyCode::KeyL) {
         panels.combat_log = !panels.combat_log;
     }
-    // ESC 关闭对话
-    if keyboard.just_pressed(KeyCode::Escape) && dialog.dialog.is_some() {
-        // dialog_state 需要在 ui 系统清理
-    }
+    // ESC 关闭对话由 ui::update_dialog_system 处理
+    let _ = dialog;
 }
 
 // ============================================================================
@@ -627,12 +758,13 @@ pub fn panel_toggle_system(
 
 /// 渲染系统: 同步游戏实体到 Bevy ECS 实体
 ///
-/// - 玩家: 绿色方块
+/// - 玩家: 绿色方块 (始终可见，即使未登录也在 0,0)
 /// - 其他玩家: 蓝色方块
 /// - 怪物: 红色方块
 /// - NPC: 黄色方块
 /// - 选中目标: 白色光环
 /// - 掉落物: 金色小方块
+/// - HP 条: 实体上方
 pub fn render_system(
     player: Res<PlayerState>,
     entities: Res<EntityManager>,
@@ -646,19 +778,26 @@ pub fn render_system(
     drop_query: Query<(Entity, &DroppedItem)>,
     ring_query: Query<Entity, With<SelectionRing>>,
 ) {
-    // --- 玩家自身 ---
+    // --- 玩家自身 (始终渲染) ---
+    let player_color = if player.logged_in {
+        Color::srgb(0.2, 0.95, 0.2)
+    } else {
+        Color::srgb(0.4, 0.6, 0.4) // 未登录时暗色
+    };
     if let Some(player_entity) = player_query.iter().next() {
+        // 更新位置和颜色
         commands.entity(player_entity).insert(Transform::from_xyz(
             player.x,
             -player.y,
             10.0,
         ));
-    } else if player.logged_in {
+    } else {
+        // 始终创建玩家实体
         commands.spawn((
             SpriteBundle {
                 sprite: Sprite {
-                    color: Color::srgb(0.2, 0.9, 0.2),
-                    custom_size: Some(Vec2::new(30.0, 30.0)),
+                    color: player_color,
+                    custom_size: Some(Vec2::new(32.0, 32.0)),
                     ..default()
                 },
                 transform: Transform::from_xyz(player.x, -player.y, 10.0),
@@ -668,6 +807,10 @@ pub fn render_system(
             GamePosition::new(player.x, player.y),
             HealthBar::new(player.hp, player.max_hp),
         ));
+    }
+    // 更新玩家 HP 条
+    if let Some(player_entity) = player_query.iter().next() {
+        commands.entity(player_entity).insert(HealthBar::new(player.hp, player.max_hp));
     }
 
     // --- 其他玩家 ---
@@ -694,7 +837,7 @@ pub fn render_system(
                 SpriteBundle {
                     sprite: Sprite {
                         color: Color::srgb(0.2, 0.5, 0.9),
-                        custom_size: Some(Vec2::new(25.0, 25.0)),
+                        custom_size: Some(Vec2::new(28.0, 28.0)),
                         ..default()
                     },
                     transform: Transform::from_xyz(info.x, -info.y, 5.0),
@@ -726,11 +869,10 @@ pub fn render_system(
             }
         }
         if !found {
-            let size = if info.is_npc() { 28.0 } else { 24.0 };
-            let color = if info.is_npc() {
-                Color::srgb(0.9, 0.8, 0.2) // NPC: 黄色
+            let (size, color) = if info.is_npc() {
+                (32.0, Color::srgb(0.95, 0.85, 0.2)) // NPC: 亮黄色
             } else {
-                Color::srgb(0.9, 0.2, 0.2) // 怪物: 红色
+                (26.0, Color::srgb(0.95, 0.25, 0.25)) // 怪物: 亮红色
             };
             commands.spawn((
                 SpriteBundle {
@@ -777,8 +919,8 @@ pub fn render_system(
             commands.spawn((
                 SpriteBundle {
                     sprite: Sprite {
-                        color: Color::srgb(0.9, 0.7, 0.0),
-                        custom_size: Some(Vec2::new(12.0, 12.0)),
+                        color: Color::srgb(1.0, 0.85, 0.0),
+                        custom_size: Some(Vec2::new(14.0, 14.0)),
                         ..default()
                     },
                     transform: Transform::from_xyz(drop.x, -drop.y, 3.0),
@@ -806,7 +948,7 @@ pub fn render_system(
                     SpriteBundle {
                         sprite: Sprite {
                             color: Color::srgb(1.0, 1.0, 1.0),
-                            custom_size: Some(Vec2::new(36.0, 36.0)),
+                            custom_size: Some(Vec2::new(40.0, 40.0)),
                             ..default()
                         },
                         transform: Transform::from_xyz(info.x, -info.y, 4.0),
