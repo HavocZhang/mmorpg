@@ -533,14 +533,12 @@ impl GameState {
                     self.last_mob_tick.store(now, std::sync::atomic::Ordering::Relaxed);
                 }
 
-                let npcs_json: Vec<String> = self.npcs.iter().map(|n| n.to_json()).collect();
-                let mobs_json: Vec<String> = self.mobs.iter().map(|m| m.to_list_entry()).collect();
-                let entity_json = serde_json::json!({
-                    "npcs": npcs_json,
-                    "mobs": mobs_json,
-                })
-                .to_string();
-                messages.push(dm(uid, 9002, entity_json, 0));
+                // proto 编码 EntityList (符合 game.proto 单一数据源)
+                let entity_list = gp::EntityList {
+                    npcs: self.npcs.iter().map(|n| n.to_entity_list_entry()).collect(),
+                    mobs: self.mobs.iter().map(|m| m.to_entity_list_entry()).collect(),
+                };
+                messages.push(super::codec::dm_proto(uid, 9002, &entity_list, 0));
             }
 
             _ => {

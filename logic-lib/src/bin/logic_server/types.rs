@@ -477,6 +477,22 @@ impl MobEntity {
     pub fn to_list_entry(&self) -> String {
         self.to_spawn_json()
     }
+
+    /// 转为 proto EntityListEntry (用于 9002 下行)
+    pub fn to_entity_list_entry(&self) -> gp::EntityListEntry {
+        gp::EntityListEntry {
+            entity_id: self.entity_id,
+            def_id: self.def_id,
+            name: self.name.clone(),
+            x: self.x,
+            y: self.y,
+            hp: self.hp,
+            max_hp: self.max_hp,
+            level: self.level,
+            npc_type: String::new(),
+            quest_id: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -516,6 +532,27 @@ impl NpcEntity {
             json["quests"] = serde_json::json!(quest_ids);
         }
         json.to_string()
+    }
+
+    /// 转为 proto EntityListEntry (用于 9002 下行)
+    pub fn to_entity_list_entry(&self) -> gp::EntityListEntry {
+        let quest_id = if self.npc_type == "quest_giver" {
+            QUEST_DEFS.first().map(|q| q.id).unwrap_or(0)
+        } else {
+            0
+        };
+        gp::EntityListEntry {
+            entity_id: self.id as u64,
+            def_id: self.id,
+            name: self.name.clone(),
+            x: self.x,
+            y: self.y,
+            hp: 0,
+            max_hp: 0,
+            level: 0,
+            npc_type: self.npc_type.clone(),
+            quest_id,
+        }
     }
 }
 

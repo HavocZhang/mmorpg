@@ -12,6 +12,7 @@ mod ui;
 
 use bevy::log::LogPlugin;
 use bevy::prelude::*;
+use bevy::render::view::VisibilitySystems;
 
 /// 登录用的测试 UID
 const LOGIN_UID: u64 = 12345;
@@ -56,11 +57,16 @@ fn main() {
         .init_resource::<resources::TargetEntity>()
         .init_resource::<resources::CombatLog>()
         .init_resource::<resources::PanelVisibility>()
+        // 事件注册
+        .add_event::<components::DamageEvent>()
+        .add_event::<components::ExpGainEvent>()
+        .add_event::<components::PlayerDeathEvent>()
+        .add_event::<components::PlayerReviveEvent>()
         // 渲染设置: 深蓝灰色背景
         .insert_resource(ClearColor(Color::srgb(0.05, 0.06, 0.1)))
-        // 启动系统
-        .add_systems(Startup, (setup, systems::setup_world, ui::setup_ui))
-        // 每帧更新系统
+        // 启动系统 (顺序执行: setup 先加载字体，setup_ui 依赖 GameFont)
+        .add_systems(Startup, (setup, systems::setup_world, ui::setup_ui).chain())
+        // 每帧更新系统 (分两组避免超过 Bevy 20 个系统元组限制)
         .add_systems(
             Update,
             (
@@ -74,7 +80,25 @@ fn main() {
                 systems::entity_query_timer,
                 // 渲染
                 systems::render_system,
+                systems::update_hp_bar_system,
+                // 位置插值 (在 render_system 之后，让 Transform 平滑追随 TargetPosition)
+                systems::interpolate_position_system,
+                // 伤害/经验飘字
+                systems::spawn_damage_text_system,
+                systems::spawn_exp_text_system,
+                systems::damage_text_system,
+                // 相机
                 systems::camera_follow_system,
+                systems::camera_zoom_system,
+                // 死亡处理
+                systems::death_system,
+                // 连接后拉取配置/实体
+                on_connected_system,
+            ),
+        )
+        .add_systems(
+            Update,
+            (
                 // UI 更新
                 ui::update_hud_system,
                 ui::update_center_status_system,
@@ -83,17 +107,38 @@ fn main() {
                 ui::update_quest_system,
                 ui::update_combat_log_system,
                 ui::update_dialog_system,
-                // 连接后拉取配置/实体
-                on_connected_system,
             ),
+        )
+        // 诊断: 在 CheckVisibility 之后检查实体的可见性状态
+        .add_systems(
+            PostUpdate,
+            systems::visibility_diagnostic_system.after(VisibilitySystems::CheckVisibility),
         )
         .run();
 }
 
 /// 启动系统: 创建相机并连接服务器
-fn setup(mut commands: Commands, net: Res<network::NetworkResource>) {
-    // 2D 相机
-    commands.spawn(Camera2dBundle::default());
+fn setup(
+    mut commands: Commands,
+    net: Res<network::NetworkResource>,
+    asset_server: Res<AssetServer>,
+) {
+    // 加载中文字体 (simhei.ttf)
+    let font = asset_server.load("fonts/simhei.ttf");
+    commands.insert_resource(components::GameFont { font: font.clone() });
+
+    // 2D 相机 (初始缩放 1.5x)
+    // near=-1000 确保所有 z>0 的 2D 实体不会被近平面剔除
+    commands.spawn(Camera2dBundle {
+        projection: OrthographicProjection {
+            near: -1000.0,
+            far: 1000.0,
+            scale: 1.5,
+            ..default()
+        },
+        transform: Transform::from_xyz(0.0, 0.0, 999.0),
+        ..default()
+    });
 
     // 连接服务器 (TCP 直连网关 7888)
     info!("正在连接服务器 tcp://{}...", "127.0.0.1:7888");

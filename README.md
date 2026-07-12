@@ -6,19 +6,19 @@
 [![Security](https://img.shields.io/badge/audit-0%20vulns-brightgreen.svg)](#安全审计)
 [![Throughput](https://img.shields.io/badge/throughput-80K%20pps-blue.svg)](#吞吐压测)
 [![Stability](https://img.shields.io/badge/stability-72h%20running-brightgreen.svg)](#稳定性压测)
-[![Version](https://img.shields.io/badge/version-v0.7.0-green.svg)](ROADMAP.md)
+[![Version](https://img.shields.io/badge/version-v0.8.0-green.svg)](ROADMAP.md)
 
 **Rust 实现的高性能、有状态的 MMO 游戏接入网关集群**，支持百万级并发在线、多节点集群跨网关通信、gRPC 逻辑服路由，自带完整 MMORPG 游戏逻辑与客户端无关的协议契约层。
 
-**当前版本**: v0.7.0 — 框架化重构（Protobuf 协议层 + 模块化拆分 + 稳定性修复）
+**当前版本**: v0.8.0 — 四层框架重构（协议补全 + 配置数据层 + 事件总线 + 领域拆分）
 
-> 🎮 打开 `web-client/game.html` 即可体验完整的 MMORPG 游戏！
+> 🎮 启动 `bevy-client`（Bevy 0.14 原生客户端）即可体验完整的 MMORPG 游戏！
 
 ---
 
 ## 目录
 
-- [v0.7 更新亮点](#v07-更新亮点)
+- [v0.8 更新亮点](#v08-更新亮点)
 - [架构概览](#架构概览)
 - [游戏功能](#游戏功能)
 - [快速开始](#快速开始)
@@ -31,34 +31,50 @@
 
 ---
 
-## v0.7 更新亮点
+## v0.8 更新亮点
 
-### 1. Protobuf 协议契约层（客户端无关框架基石）
-- 新增 [proto/game.proto](proto/game.proto)：35 个消息 + 1 枚举 + 包装器，覆盖全部 17 上行 + 17 下行消息
-- `build.rs` 自动编译生成 Rust 代码，`logic_lib::game_proto` 模块统一暴露
-- 新增 [web-client/sdk/proto_sdk.js](web-client/sdk/proto_sdk.js) JS 客户端 SDK，从同一份 proto 生成
-- **切换客户端（Unity/UE/Godot/移动端）只需从 game.proto 重新生成对应语言 SDK**
+### 1. 四层框架重构（客户端无关基石）
 
-### 2. 代码模块化重构
-- `logic_server.rs` 3448 行单文件拆分为 7 个模块（`src/bin/logic_server/` 目录）：
-  - `main.rs` 入口 + gRPC impl
-  - `constants.rs` 常量 + 静态数据
-  - `types.rs` 实体结构
-  - `utils.rs` 工具函数
-  - `state.rs` GameState + MockLogicService
-  - `handlers.rs` 业务方法
-  - `tests.rs` 18 个测试
+v0.8 将网关 + 逻辑服 + 客户端彻底分层，服务端不再耦合任何特定客户端形态：
 
-### 3. 稳定性修复（TDD/BDD 方法论）
-- 修复 DashMap 锁竞争死锁（tick_mob_ai / handle_complete_quest / 8004 广播）
-- 修复 tokio runtime 阻塞（spawn_blocking + 独立 OS 线程）
-- 修复装备强化随机数种子（AtomicU64 计数器）
-- tracing 日志替换 println!，带模块路径定位
+| 层 | 职责 | 实现 |
+|----|------|------|
+| **协议层** | 单一真相源 `proto/game.proto`，prost 自动生成 Rust SDK | 35 消息 + 1 枚举 + 包装器，5 个 TDD 测试 |
+| **配置数据层** | 9 个 JSON 配置文件 + 热加载 + msg_id=101/9100 拉取协议 | `config/*.json` + `config_loader.rs` |
+| **事件总线** | `GameEvent` + `SideEffect` + 3 订阅者，解耦业务逻辑 | `event_bus.rs`，handle_attack 已解耦 |
+| **领域拆分** | handlers.rs 拆分为 5 个领域文件 | combat / inventory / quest / world / handlers |
 
-### 4. 新增功能
-- 装备强化系统（+0~+10，分档成功率，DB 持久化）
-- 客户端小地图（右上角 160×120，显示怪物/NPC/玩家）
-- 客户端登录页面 + 职业选择面板
+### 2. Bevy 原生客户端（替代 HTML 客户端）
+
+- 移除 `web-client/`（28 文件 / 9029 行 JS 代码）
+- 新增 `bevy-client/`（Bevy 0.14.2 原生 Rust 客户端），8 个核心源文件：
+  - `main.rs` — 应用入口 + 相机配置
+  - `network.rs` — TCP 直连网关 7888 + AES-256-GCM 加密 + 读写任务分离
+  - `codec.rs` — 14 上行编码 + 13 下行解码（protobuf）
+  - `crypto.rs` — AES-GCM 加解密 + CRC32
+  - `components.rs` — ECS 组件（Player/GameEntity/HealthBar/NameTag 等）
+  - `resources.rs` — ECS 资源（PlayerState/EntityManager/Inventory 等）
+  - `systems.rs` — 20+ 系统（渲染 / 输入 / 相机 / 插值 / 飘字 / 诊断）
+  - `ui.rs` — HUD + 背包 + 任务 + 战斗日志 + NPC 对话面板
+
+### 3. 网络层统一为 TCP 直连
+
+- 移除 `ws_listener.rs`（网关 WebSocket 监听器）
+- 客户端统一使用 `tokio::net::TcpStream::connect("127.0.0.1:7888")`
+- 通道架构：`tokio::sync::mpsc`（命令通道，网络线程 await）+ `crossbeam`（事件通道，Bevy 主线程 try_recv）
+- 读写任务分离：`ReadHalf` 用 `read_exact`（不可被 select! 取消），`WriteHalf` 在主循环
+
+### 4. 服务端 9002 协议 protobuf 化
+
+- `MobEntity` / `NpcEntity` 新增 `to_entity_list_entry()` 方法
+- 4002 响应 + 登录 9002 广播全部使用 `dm_proto` 编码
+- 修复客户端收不到实体列表的协议不匹配问题
+
+### 5. Bevy 客户端可见性修复
+
+- 相机 `OrthographicProjection.near = -1000.0`，确保 z>0 的 2D 实体不被近平面剔除
+- 实体添加 `NoFrustumCulling` 组件，禁用视锥体剔除
+- 新增 `visibility_diagnostic_system`，在 `CheckVisibility` 之后输出 `ViewVisibility` / `InheritedVisibility` 状态
 
 ---
 
@@ -66,7 +82,7 @@
 
 ```
                     ┌─────────────┐
-                    │   Client    │  (WebSocket :7890 / TCP :7888)
+                    │   Client    │  (Bevy 原生客户端 / TCP :7888)
                     └──────┬──────┘
                            │
               ┌────────────┼────────────┐
@@ -89,7 +105,7 @@
          └─────────┘  └─────────┘  └─────────┘
 ```
 
-**14 个核心模块**：
+**13 个核心模块**（v0.8 移除 ws_listener）：
 
 | 模块 | 职责 | 关键技术 |
 |------|------|----------|
@@ -97,7 +113,7 @@
 | `foundation` | 雪花ID生成器 | 无锁 AtomicU64 |
 | `crypto` | AES-256-GCM 加密 | 12B nonce + 16B tag |
 | `protocol` | 16B 定长包头 + CRC32 | 变长包体流式解码 |
-| `network` | TCP/WS 接入 + 握手里程碑 | Tokio TCP split + WsAdapter |
+| `network` | TCP 接入 + 握手里程碑 | Tokio TCP split |
 | `session` | 会话管理（顶号/心跳） | DashMap 双映射 |
 | `io_engine` | 小包合并 + 优先级队列 | 16ms 合并窗口, 泛型 ReadLoop/WriteLoop |
 | `grpc_router` | gRPC 连接池 + 负载均衡 | tonic, 一致性哈希 |
@@ -106,7 +122,6 @@
 | `admin` | HTTP 监控 + Prometheus | actix-web, 优雅停机 |
 | `chat` | 聊天系统 | broadcast 广播 + 私聊/公会频道 |
 | `combat/scene` | 战斗/场景/AOI/反外挂 | logic-lib 独立 crate |
-| `ws_listener` | WebSocket 原生支持 | WsAdapter AsyncRead/AsyncWrite |
 
 ---
 
@@ -130,7 +145,7 @@ Logic Server 实现了完整 MMORPG 游戏玩法：
 | 职业 | 战/法/弓 3 职业 + 9 天赋 + 属性加成 | v0.6 |
 | 排行 | 等级榜/金币榜 Top20 | v0.6 |
 | 反外挂 | 速度/频率/背包校验 + 强制拉回 | v0.5 |
-| 小地图 | 右上角 160×120 实时显示实体分布 | v0.7 |
+| **配置热拉取** | **9 JSON 配置 + msg_id=101/9100 拉取协议** | **v0.8** |
 
 ---
 
@@ -148,21 +163,27 @@ Logic Server 实现了完整 MMORPG 游戏玩法：
 # 1. 启动 Redis
 docker run -d --name redis-mmo -p 6379:6379 redis:7
 
-# 2. 编译（release + native 优化）
+# 2. 编译网关 (release + native 优化)
 cargo build --release
 
-# 3. 启动逻辑服
-cd logic-lib && cargo run --release --bin logic-server &
+# 3. 编译逻辑服
+cd logic-lib && cargo build --release --bin logic-server
 
-# 4. 启动网关 (TCP :7888 + WS :7890)
+# 4. 编译 Bevy 客户端
+cd ../bevy-client && cargo build --release
+
+# 5. 启动逻辑服
+cd ../logic-lib && cargo run --release --bin logic-server &
+
+# 6. 启动网关 (TCP :7888)
 cp .env.dev .env
 cargo run --release
 
-# 5. 打开网页客户端玩
-open web-client/game.html
+# 7. 启动 Bevy 客户端
+cd bevy-client && cargo run --release
 ```
 
-### 单节点 + 集群模式 + 网页客户端
+### 单节点 + 集群模式
 
 ```bash
 # 单节点（默认）
@@ -172,12 +193,20 @@ open web-client/game.html
 GATE_TCP_PORT=7889 GATE_HTTP_PORT=9091 GATE_NODE_ID=2 \
 GATE_NODE_NAME=gate-dev-02 \
 ./target/release/rust-mmo-gate.exe
-
-# 打开网页客户端
-# 直接在浏览器打开 web-client/game.html
-# 或使用任意 HTTP 服务器:
-cd web-client && python -m http.server 8080
 ```
+
+### Bevy 客户端操作
+
+| 按键 | 功能 |
+|------|------|
+| WASD | 角色移动（带节流） |
+| 鼠标左键 | 攻击 / NPC 交互 / 拾取 |
+| 鼠标滚轮 | 相机缩放 |
+| I | 背包面板 |
+| Q | 任务面板 |
+| L | 战斗日志 |
+| 1-5 | NPC 对话选项 |
+| R | 死亡后复活 |
 
 ---
 
@@ -191,10 +220,10 @@ cp .env.prod.example .env.prod  # 编辑密钥
 docker compose -f docker-compose.prod.yml up -d
 
 # 服务列表：
-# - rust-mmo-gate ×3 (TCP 7888-7890, WS 7890-7892)
+# - rust-mmo-gate ×3 (TCP 7888-7890)
 # - Redis Sentinel: 1 主 + 2 从 + 3 哨兵
 # - PostgreSQL 16
-# - Nginx (L4 TCP 负载均衡 + L7 WebSocket 代理)
+# - Nginx (L4 TCP 负载均衡)
 # - Prometheus + Grafana (端口 3000)
 # - Alertmanager (企业微信/钉钉告警)
 ```
@@ -203,20 +232,40 @@ docker compose -f docker-compose.prod.yml up -d
 
 ## 客户端无关框架
 
-v0.7 引入 Protobuf 协议契约层，让服务端与客户端解耦：
+v0.8 将四层框架彻底分离，服务端与客户端完全解耦：
 
 ```
 proto/game.proto (单一真相源)
        │
        ├─→ Rust:    build.rs → prost 自动生成 → logic_server 使用
-       ├─→ JS/Web:  game_proto.json → proto_sdk.js → game.html 使用
+       ├─→ Bevy:    复用 rust-mmo-gate crate 的 game_proto 模块
        ├─→ Unity:   protoc --csharp_out → C# SDK（待生成）
        └─→ Godot:   protoc → GDScript（待生成）
+
+config/*.json (配置数据层)
+       │
+       └─→ 客户端通过 msg_id=101 拉取所有配置 (items/quests/mobs/...)
 ```
+
+### 配置数据层
+
+9 个 JSON 配置文件作为服务端单一真相源：
+
+| 文件 | 内容 |
+|------|------|
+| `items.json` | 物品定义（名称/类型/属性/图标） |
+| `quests.json` | 任务定义（目标/奖励/前置） |
+| `mobs.json` | 怪物定义（HP/攻击/掉落表） |
+| `npcs.json` | NPC 定义（位置/对话/功能） |
+| `maps.json` | 地图定义（传送门/区域） |
+| `skills.json` | 技能定义（伤害/冷却/消耗） |
+| `classes.json` | 职业定义（初始属性/天赋） |
+| `talents.json` | 天赋定义（效果/层级） |
+| `shop_items.json` | 商店商品定义 |
 
 ### 协议层使用
 
-**Rust 端**（已集成）：
+**Rust 端**（logic-server 已集成）：
 ```rust
 use logic_lib::game_proto::PlayerStats;
 use prost::Message;
@@ -226,11 +275,24 @@ let buf = stats.encode_to_vec();
 let decoded = PlayerStats::decode(&buf[..]).unwrap();
 ```
 
-**JS/Web 端**（SDK 已就绪）：
-```javascript
-// 通过 <script src="sdk/proto_sdk.js"> 加载
-const buf = ProtoSDK.encode(5001, { uid: 12345, name: '玩家', hp: 100, ... });
-const msg = ProtoSDK.decode(5001, buf);
+**Bevy 客户端**（复用同一 proto）：
+```rust
+use rust_mmo_gate::game_proto::EntityList;
+
+let list = EntityList::decode(&payload[..])?;
+for mob in &list.mobs { /* 渲染怪物 */ }
+```
+
+### 事件总线
+
+v0.8 引入事件总线解耦业务逻辑：
+
+```rust
+// handle_attack 只负责状态修改，通过事件总线发布副作用
+let event = GameEvent::MobKilled { entity_id, killer_uid };
+event_bus.publish(event);
+
+// 订阅者独立处理: 掉落生成 / 广播 / 任务进度
 ```
 
 ### 测试验证
@@ -239,8 +301,8 @@ const msg = ProtoSDK.decode(5001, buf);
 # Rust 协议层 TDD 测试（5 个）
 cd logic-lib && cargo test --test tdd_proto
 
-# 浏览器 SDK 测试
-# 打开 web-client/sdk/proto_sdk_test.html
+# logic-server 业务测试（含锁竞争 + BDD 场景）
+cd logic-lib && cargo test --bin logic-server
 ```
 
 ---
@@ -263,9 +325,9 @@ cd logic-lib && cargo test --test tdd_proto
 | admin | ✅ 6 | ✅ | - | - | 100% |
 | chat/combat/scene | ✅ | ✅ | - | ✅ | logic-lib |
 | **proto (v0.7)** | ✅ 5 | - | - | - | ✅ |
-| **logic-server (v0.7)** | - | ✅ 18 | ✅ | - | ✅ |
+| **logic-server (v0.8)** | - | ✅ 56 | ✅ | - | ✅ |
 
-**总计**：16 个 TDD 套件 + logic-server 18 个内联测试，共 100+ 测试用例
+**总计**：16 个 TDD 套件 + logic-server 56 个内联测试，共 100+ 测试用例
 
 ### 测试运行
 
@@ -273,7 +335,7 @@ cd logic-lib && cargo test --test tdd_proto
 # 全部单元测试
 cargo test --lib
 
-# v0.7 协议层测试
+# v0.8 协议层测试
 cd logic-lib && cargo test --test tdd_proto
 
 # logic-server 业务测试（含锁竞争 + BDD 场景）
@@ -345,13 +407,13 @@ bash ci.sh
 
 ```
 rust-mmo-gate/
-├── src/                          # 网关核心代码 (14 模块)
-│   ├── main.rs                   # 启动入口 (TCP + WS 双监听)
+├── src/                          # 网关核心代码 (13 模块)
+│   ├── main.rs                   # 启动入口 (TCP 监听)
 │   ├── config/                   # 配置管理
 │   ├── foundation/               # 雪花 ID 生成器
 │   ├── crypto/                   # AES-256-GCM 加密
 │   ├── protocol/                 # 16B 包头 + CRC32
-│   ├── network/                  # TCP/WS 接入 + 握手里程碑
+│   ├── network/                  # TCP 接入 + 握手里程碑
 │   ├── session/                  # 会话管理（DashMap 双映射）
 │   ├── io_engine/                # 小包合并 + 优先级队列 (泛型)
 │   ├── grpc_router/              # gRPC 连接池 + 负载均衡
@@ -366,26 +428,48 @@ rust-mmo-gate/
 │       ├── chat/                 # 聊天模块
 │       ├── combat/               # 战斗模块
 │       ├── scene/                # 场景/AOI 模块
-│       └── bin/logic_server/     # 主逻辑服 (v0.7 模块化)
+│       └── bin/logic_server/     # 主逻辑服 (v0.8 四层架构)
 │           ├── main.rs           # 入口 + gRPC impl
 │           ├── constants.rs      # 常量 + 静态数据
 │           ├── types.rs          # 实体结构
 │           ├── utils.rs          # 工具函数
 │           ├── state.rs          # GameState + MockLogicService
-│           ├── handlers.rs       # 业务方法
-│           └── tests.rs          # 18 个测试
+│           ├── handlers.rs       # 通用业务方法
+│           ├── combat.rs         # 战斗领域 (v0.8 拆分)
+│           ├── inventory.rs      # 背包/装备/商店领域 (v0.8 拆分)
+│           ├── quest.rs          # 任务领域 (v0.8 拆分)
+│           ├── world.rs          # NPC/怪物 AI 领域 (v0.8 拆分)
+│           ├── codec.rs          # proto 编解码
+│           ├── config_loader.rs  # 配置数据层加载 (v0.8 新增)
+│           ├── event_bus.rs      # 事件总线 (v0.8 新增)
+│           └── tests.rs          # 56 个测试
 │
-├── proto/                        # Protobuf 协议定义 (v0.7)
+├── bevy-client/                  # Bevy 原生客户端 (v0.8 新增)
+│   ├── src/
+│   │   ├── main.rs               # 应用入口 + 相机配置
+│   │   ├── network.rs            # TCP 直连 + AES-GCM + 读写任务分离
+│   │   ├── codec.rs              # 14 上行编码 + 13 下行解码
+│   │   ├── crypto.rs             # AES-GCM + CRC32
+│   │   ├── components.rs         # ECS 组件
+│   │   ├── resources.rs          # ECS 资源
+│   │   ├── systems.rs            # 20+ 系统 (渲染/输入/相机/诊断)
+│   │   └── ui.rs                 # HUD + 面板
+│   └── assets/fonts/simhei.ttf   # 中文字体
+│
+├── config/                       # 配置数据层 (v0.8 新增)
+│   ├── items.json                # 物品配置
+│   ├── quests.json               # 任务配置
+│   ├── mobs.json                 # 怪物配置
+│   ├── npcs.json                 # NPC 配置
+│   ├── maps.json                 # 地图配置
+│   ├── skills.json               # 技能配置
+│   ├── classes.json              # 职业配置
+│   ├── talents.json              # 天赋配置
+│   └── shop_items.json           # 商店配置
+│
+├── proto/                        # Protobuf 协议定义
 │   ├── gate.proto                # 网关 gRPC 协议
 │   └── game.proto                # 游戏消息协议 (35 消息)
-│
-├── web-client/                   # 网页游戏客户端
-│   ├── game.html                 # 单文件 MMORPG 客户端
-│   ├── sdk/                      # 客户端 SDK
-│   │   ├── game_proto.json       # proto 生成的消息描述
-│   │   ├── proto_sdk.js          # Protobuf 编解码 SDK
-│   │   └── proto_sdk_test.html   # SDK 测试页
-│   └── test_*.js                 # E2E/压测脚本
 │
 ├── tests/                        # 测试套件
 │   ├── tdd_unit/                 # 16 个 TDD 单元测试文件
@@ -396,7 +480,7 @@ rust-mmo-gate/
 │   └── bdd_feature/              # Gherkin .feature 场景
 │
 ├── deploy/                       # 生产部署配置
-│   ├── nginx/                    # Nginx L4 TCP + L7 WS
+│   ├── nginx/                    # Nginx L4 TCP
 │   ├── prometheus/               # 监控告警
 │   └── alertmanager/             # Alertmanager + Webhook
 │
@@ -483,15 +567,15 @@ cargo clippy --all-targets -- -D warnings
 | 异步运行时 | Tokio multi-thread |
 | 并发 | DashMap + parking_lot + crossbeam |
 | 加密 | AES-256-GCM (aes-gcm crate) |
-| 协议 | 16B 定长包头 + CRC32 + 变长包体 (TCP/WS) |
+| 协议 | 16B 定长包头 + CRC32 + 变长包体 (TCP) |
 | 序列化 | prost (Protobuf) + serde_json |
 | gRPC | tonic 0.12 |
 | HTTP | actix-web 4 |
-| WebSocket | tokio-tungsenite 0.24 |
 | Redis | redis-rs (连接池 + PubSub + Sentinel) |
 | 数据库 | PostgreSQL + SQLite (离线降级) |
+| 游戏引擎 | Bevy 0.14.2 (ECS + 渲染 + 输入) |
 | 监控 | Prometheus + Grafana + Alertmanager |
-| 部署 | Docker Compose + Nginx L4/L7 |
+| 部署 | Docker Compose + Nginx L4 |
 | CI/CD | GitHub Actions 5 阶段流水线 |
 | 日志 | tracing + tracing-subscriber |
 
@@ -507,7 +591,8 @@ cargo clippy --all-targets -- -D warnings
 | v0.4 | 客户端可玩 | 网页客户端/背包排序/装备对比/技能特效/NPC |
 | v0.5 | 生产化 | Docker Compose / WebSocket原生 / CI/CD / 反外挂 / SQLite |
 | v0.6 | 游戏内容 | 4地图/3Boss/公会/PvP/商店/职业/私聊/排行 |
-| **v0.7** | **框架化** | **Protobuf 协议层 / 模块化重构 / 稳定性修复 / 装备强化 / 小地图** |
+| v0.7 | 框架化 | Protobuf 协议层 / 模块化重构 / 稳定性修复 / 装备强化 |
+| **v0.8** | **四层架构** | **协议补全 + 配置数据层 + 事件总线 + 领域拆分 + Bevy 客户端 + TCP 统一** |
 
 详细路线图见 [ROADMAP.md](ROADMAP.md)
 
@@ -519,4 +604,4 @@ MIT License
 
 ---
 
-*最后更新: 2026-07-12 | v0.7.0 框架化重构 | 80K pps 吞吐 | 100+ 测试通过*
+*最后更新: 2026-07-13 | v0.8.0 四层框架重构 | 80K pps 吞吐 | 100+ 测试通过 | Bevy 原生客户端*

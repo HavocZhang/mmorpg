@@ -293,6 +293,9 @@ pub fn network_event_system(
     mut drops: ResMut<crate::resources::DropManager>,
     mut dialog_state: ResMut<crate::resources::NpcDialogState>,
     mut combat_log: ResMut<crate::resources::CombatLog>,
+    mut damage_events: ResMut<bevy::ecs::event::Events<crate::components::DamageEvent>>,
+    mut exp_events: ResMut<bevy::ecs::event::Events<crate::components::ExpGainEvent>>,
+    mut death_events: ResMut<bevy::ecs::event::Events<crate::components::PlayerDeathEvent>>,
     mut windows: Query<&mut bevy::window::Window>,
 ) {
     while let Ok(event) = net.recv_rx.try_recv() {
@@ -328,6 +331,9 @@ pub fn network_event_system(
                     &mut dialog_state,
                     &mut combat_log,
                     &mut game_config,
+                    &mut damage_events,
+                    &mut exp_events,
+                    &mut death_events,
                 );
             }
             NetworkEvent::Error(e) => {

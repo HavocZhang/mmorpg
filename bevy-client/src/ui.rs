@@ -1,8 +1,9 @@
 //! UI 面板系统
 //!
 //! 显示:
-//! - 顶部 HUD: 玩家名/等级/HP/MP/经验条/金币/坐标
-//! - 居中状态提示: 连接中/等待登录/可游玩
+//! - 顶部 HUD: 玩家名/等级 + HP/MP/经验可视化条 + 金币/坐标
+//! - 居中状态提示: 连接中/等待登录
+//! - 死亡覆盖层: "你已死亡 按 R 复活"
 //! - 背包面板 (按 I 切换)
 //! - 任务面板 (按 Q 切换)
 //! - NPC 对话框
@@ -11,6 +12,7 @@
 
 use bevy::prelude::*;
 
+use crate::components::GameFont;
 use crate::network::{NetworkCommand, NetworkResource};
 use crate::resources::*;
 
@@ -18,63 +20,51 @@ use crate::resources::*;
 // UI 标记组件
 // ============================================================================
 
-/// UI 根节点
 #[derive(Component)]
 pub struct UiRoot;
 
-/// HUD 状态文本 (顶部栏)
 #[derive(Component)]
 pub struct HudText;
 
-/// 居中状态提示文本 (连接中/等待登录)
 #[derive(Component)]
 pub struct CenterStatusText;
 
-/// HP 条填充 (绿色)
+/// HP 条填充 (UI 层，玩家自己的 HP 条)
 #[derive(Component)]
-pub struct HpBarFill;
+pub struct PlayerHpBarFill;
 
-/// MP 条填充 (蓝色)
+/// MP 条填充
 #[derive(Component)]
-pub struct MpBarFill;
+pub struct PlayerMpBarFill;
 
-/// 经验条填充 (黄色)
+/// 经验条填充
 #[derive(Component)]
-pub struct ExpBarFill;
+pub struct PlayerExpBarFill;
 
-/// 背包面板容器
 #[derive(Component)]
 pub struct InventoryPanel;
 
-/// 任务面板容器
 #[derive(Component)]
 pub struct QuestPanel;
 
-/// 战斗日志面板容器
 #[derive(Component)]
 pub struct CombatLogPanel;
 
-/// 战斗日志文本
 #[derive(Component)]
 pub struct CombatLogText;
 
-/// NPC 对话框容器
 #[derive(Component)]
 pub struct DialogPanel;
 
-/// 对话文本
 #[derive(Component)]
 pub struct DialogText;
 
-/// 对话选项容器
 #[derive(Component)]
 pub struct DialogOptions;
 
-/// 背包内容容器
 #[derive(Component)]
 pub struct InventoryContent;
 
-/// 任务内容容器
 #[derive(Component)]
 pub struct QuestContent;
 
@@ -83,8 +73,8 @@ pub struct QuestContent;
 // ============================================================================
 
 /// 创建 UI 根节点和所有面板
-pub fn setup_ui(mut commands: Commands) {
-    // UI 根节点 (全屏覆盖层)
+pub fn setup_ui(mut commands: Commands, game_font: Res<GameFont>) {
+    let font = game_font.font.clone();
     commands
         .spawn((
             NodeBundle {
@@ -100,31 +90,121 @@ pub fn setup_ui(mut commands: Commands) {
             UiRoot,
         ))
         .with_children(|parent| {
-            // ── 顶部 HUD 状态栏 (用 TextBundle 保证有 Text 组件) ──
-            parent.spawn((
-                TextBundle::from_section(
-                    "Rust MMO - 启动中...",
-                    TextStyle {
-                        font_size: 14.0,
-                        color: Color::srgb(0.95, 0.95, 0.95),
+            // ── 顶部 HUD 状态栏 ──
+            parent
+                .spawn(NodeBundle {
+                    style: Style {
+                        width: Val::Percent(100.0),
+                        height: Val::Px(70.0),
+                        padding: UiRect::all(Val::Px(8.0)),
+                        flex_direction: FlexDirection::Column,
                         ..default()
                     },
-                )
-                .with_style(Style {
-                    width: Val::Percent(100.0),
-                    height: Val::Px(40.0),
-                    padding: UiRect::all(Val::Px(8.0)),
+                    background_color: Color::srgba(0.05, 0.05, 0.1, 0.9).into(),
                     ..default()
                 })
-                .with_background_color(Color::srgba(0.1, 0.1, 0.2, 0.9)),
-                HudText,
-            ));
+                .with_children(|hud| {
+                    // 第一行: 玩家名/等级/HP/MP/经验文本
+                    hud.spawn((
+                        TextBundle::from_section(
+                            "Rust MMO - 启动中...",
+                            TextStyle {
+                                font: font.clone(),
+                                font_size: 13.0,
+                                color: Color::srgb(0.95, 0.95, 0.95),
+                                ..default()
+                            },
+                        )
+                        .with_style(Style {
+                            width: Val::Percent(100.0),
+                            height: Val::Px(20.0),
+                            ..default()
+                        }),
+                        HudText,
+                    ));
+                    // 第二行: HP 条 (红绿)
+                    hud.spawn(NodeBundle {
+                        style: Style {
+                            width: Val::Percent(100.0),
+                            height: Val::Px(12.0),
+                            margin: UiRect::top(Val::Px(2.0)),
+                            ..default()
+                        },
+                        background_color: Color::srgb(0.1, 0.05, 0.05).into(),
+                        ..default()
+                    })
+                    .with_children(|hp_bar| {
+                        hp_bar.spawn((
+                            NodeBundle {
+                                style: Style {
+                                    width: Val::Percent(100.0),
+                                    height: Val::Percent(100.0),
+                                    ..default()
+                                },
+                                background_color: Color::srgb(0.8, 0.2, 0.2).into(),
+                                ..default()
+                            },
+                            PlayerHpBarFill,
+                        ));
+                    });
+                    // 第三行: MP 条 (蓝)
+                    hud.spawn(NodeBundle {
+                        style: Style {
+                            width: Val::Percent(100.0),
+                            height: Val::Px(8.0),
+                            margin: UiRect::top(Val::Px(1.0)),
+                            ..default()
+                        },
+                        background_color: Color::srgb(0.05, 0.05, 0.1).into(),
+                        ..default()
+                    })
+                    .with_children(|mp_bar| {
+                        mp_bar.spawn((
+                            NodeBundle {
+                                style: Style {
+                                    width: Val::Percent(100.0),
+                                    height: Val::Percent(100.0),
+                                    ..default()
+                                },
+                                background_color: Color::srgb(0.2, 0.4, 0.9).into(),
+                                ..default()
+                            },
+                            PlayerMpBarFill,
+                        ));
+                    });
+                    // 第四行: 经验条 (黄)
+                    hud.spawn(NodeBundle {
+                        style: Style {
+                            width: Val::Percent(100.0),
+                            height: Val::Px(4.0),
+                            margin: UiRect::top(Val::Px(1.0)),
+                            ..default()
+                        },
+                        background_color: Color::srgb(0.1, 0.1, 0.05).into(),
+                        ..default()
+                    })
+                    .with_children(|exp_bar| {
+                        exp_bar.spawn((
+                            NodeBundle {
+                                style: Style {
+                                    width: Val::Percent(0.0),
+                                    height: Val::Percent(100.0),
+                                    ..default()
+                                },
+                                background_color: Color::srgb(0.9, 0.8, 0.2).into(),
+                                ..default()
+                            },
+                            PlayerExpBarFill,
+                        ));
+                    });
+                });
 
             // ── 居中状态提示 (连接/登录中) ──
             parent.spawn((
                 TextBundle::from_section(
                     "正在连接服务器...",
                     TextStyle {
+                        font: font.clone(),
                         font_size: 28.0,
                         color: Color::srgb(1.0, 1.0, 0.4),
                         ..default()
@@ -145,180 +225,218 @@ pub fn setup_ui(mut commands: Commands) {
                 CenterStatusText,
             ));
 
-            // ── 背包面板 (左下, 默认隐藏) ──
+            // ── 死亡覆盖层 (居中大字) ──
             parent.spawn((
                 NodeBundle {
                     style: Style {
-                        width: Val::Px(300.0),
-                        height: Val::Px(400.0),
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(100.0),
                         position_type: PositionType::Absolute,
-                        left: Val::Px(10.0),
-                        bottom: Val::Px(40.0),
-                        padding: UiRect::all(Val::Px(10.0)),
-                        flex_direction: FlexDirection::Column,
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
                         display: Display::None,
                         ..default()
                     },
-                    background_color: Color::srgba(0.05, 0.05, 0.1, 0.95).into(),
-                    border_color: Color::srgb(0.4, 0.4, 0.6).into(),
+                    background_color: Color::srgba(0.3, 0.0, 0.0, 0.5).into(),
                     ..default()
                 },
-                InventoryPanel,
+                crate::systems::DeathOverlay,
             ))
-            .with_children(|panel| {
-                panel.spawn(TextBundle::from_section(
-                    "== 背包 (I) ==",
+            .with_children(|overlay| {
+                overlay.spawn(TextBundle::from_section(
+                    "你已死亡\n按 R 键复活",
                     TextStyle {
-                        font_size: 16.0,
-                        color: Color::srgb(0.9, 0.9, 0.4),
+                        font: font.clone(),
+                        font_size: 48.0,
+                        color: Color::srgb(1.0, 0.3, 0.3),
                         ..default()
                     },
-                ));
-                panel.spawn((
-                    NodeBundle {
-                        style: Style {
-                            width: Val::Percent(100.0),
-                            flex_grow: 1.0,
-                            flex_direction: FlexDirection::Column,
-                            overflow: Overflow::clip_y(),
-                            ..default()
-                        },
-                        ..default()
-                    },
-                    InventoryContent,
                 ));
             });
+
+            // ── 背包面板 (左下, 默认隐藏) ──
+            parent
+                .spawn((
+                    NodeBundle {
+                        style: Style {
+                            width: Val::Px(300.0),
+                            height: Val::Px(400.0),
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(10.0),
+                            bottom: Val::Px(40.0),
+                            padding: UiRect::all(Val::Px(10.0)),
+                            flex_direction: FlexDirection::Column,
+                            display: Display::None,
+                            ..default()
+                        },
+                        background_color: Color::srgba(0.05, 0.05, 0.1, 0.95).into(),
+                        border_color: Color::srgb(0.4, 0.4, 0.6).into(),
+                        ..default()
+                    },
+                    InventoryPanel,
+                ))
+                .with_children(|panel| {
+                    panel.spawn(TextBundle::from_section(
+                        "== 背包 (I) ==",
+                        TextStyle {
+                            font: font.clone(),
+                            font_size: 16.0,
+                            color: Color::srgb(0.9, 0.9, 0.4),
+                            ..default()
+                        },
+                    ));
+                    panel.spawn((
+                        NodeBundle {
+                            style: Style {
+                                width: Val::Percent(100.0),
+                                flex_grow: 1.0,
+                                flex_direction: FlexDirection::Column,
+                                overflow: Overflow::clip_y(),
+                                ..default()
+                            },
+                            ..default()
+                        },
+                        InventoryContent,
+                    ));
+                });
 
             // ── 任务面板 (右侧, 默认隐藏) ──
-            parent.spawn((
-                NodeBundle {
-                    style: Style {
-                        width: Val::Px(320.0),
-                        height: Val::Px(400.0),
-                        position_type: PositionType::Absolute,
-                        right: Val::Px(10.0),
-                        bottom: Val::Px(40.0),
-                        padding: UiRect::all(Val::Px(10.0)),
-                        flex_direction: FlexDirection::Column,
-                        display: Display::None,
-                        ..default()
-                    },
-                    background_color: Color::srgba(0.05, 0.05, 0.1, 0.95).into(),
-                    border_color: Color::srgb(0.4, 0.4, 0.6).into(),
-                    ..default()
-                },
-                QuestPanel,
-            ))
-            .with_children(|panel| {
-                panel.spawn(TextBundle::from_section(
-                    "== 任务日志 (Q) ==",
-                    TextStyle {
-                        font_size: 16.0,
-                        color: Color::srgb(0.9, 0.9, 0.4),
-                        ..default()
-                    },
-                ));
-                panel.spawn((
+            parent
+                .spawn((
                     NodeBundle {
                         style: Style {
-                            width: Val::Percent(100.0),
-                            flex_grow: 1.0,
+                            width: Val::Px(320.0),
+                            height: Val::Px(400.0),
+                            position_type: PositionType::Absolute,
+                            right: Val::Px(10.0),
+                            bottom: Val::Px(40.0),
+                            padding: UiRect::all(Val::Px(10.0)),
                             flex_direction: FlexDirection::Column,
-                            overflow: Overflow::clip_y(),
+                            display: Display::None,
                             ..default()
                         },
+                        background_color: Color::srgba(0.05, 0.05, 0.1, 0.95).into(),
+                        border_color: Color::srgb(0.4, 0.4, 0.6).into(),
                         ..default()
                     },
-                    QuestContent,
-                ));
-            });
+                    QuestPanel,
+                ))
+                .with_children(|panel| {
+                    panel.spawn(TextBundle::from_section(
+                        "== 任务日志 (Q) ==",
+                        TextStyle {
+                            font: font.clone(),
+                            font_size: 16.0,
+                            color: Color::srgb(0.9, 0.9, 0.4),
+                            ..default()
+                        },
+                    ));
+                    panel.spawn((
+                        NodeBundle {
+                            style: Style {
+                                width: Val::Percent(100.0),
+                                flex_grow: 1.0,
+                                flex_direction: FlexDirection::Column,
+                                overflow: Overflow::clip_y(),
+                                ..default()
+                            },
+                            ..default()
+                        },
+                        QuestContent,
+                    ));
+                });
 
             // ── 战斗日志 (右上, 默认隐藏) ──
-            parent.spawn((
-                NodeBundle {
-                    style: Style {
-                        width: Val::Px(350.0),
-                        height: Val::Px(200.0),
-                        position_type: PositionType::Absolute,
-                        right: Val::Px(10.0),
-                        top: Val::Px(50.0),
-                        padding: UiRect::all(Val::Px(8.0)),
-                        flex_direction: FlexDirection::Column,
-                        display: Display::None,
-                        ..default()
-                    },
-                    background_color: Color::srgba(0.05, 0.05, 0.1, 0.9).into(),
-                    border_color: Color::srgb(0.3, 0.3, 0.3).into(),
-                    ..default()
-                },
-                CombatLogPanel,
-            ))
-            .with_children(|panel| {
-                panel.spawn(TextBundle::from_section(
-                    "== 战斗日志 (L) ==",
-                    TextStyle {
-                        font_size: 12.0,
-                        color: Color::srgb(0.7, 0.7, 0.4),
-                        ..default()
-                    },
-                ));
-                panel.spawn((
-                    TextBundle::from_section(
-                        "",
-                        TextStyle {
-                            font_size: 12.0,
-                            color: Color::srgb(0.8, 0.8, 0.8),
-                            ..default()
-                        },
-                    ),
-                    CombatLogText,
-                ));
-            });
-
-            // ── NPC 对话框 (底部中央, 默认隐藏) ──
-            parent.spawn((
-                NodeBundle {
-                    style: Style {
-                        width: Val::Px(500.0),
-                        position_type: PositionType::Absolute,
-                        left: Val::Percent(25.0),
-                        bottom: Val::Px(50.0),
-                        padding: UiRect::all(Val::Px(15.0)),
-                        flex_direction: FlexDirection::Column,
-                        display: Display::None,
-                        ..default()
-                    },
-                    background_color: Color::srgba(0.08, 0.08, 0.15, 0.97).into(),
-                    border_color: Color::srgb(0.6, 0.5, 0.2).into(),
-                    ..default()
-                },
-                DialogPanel,
-            ))
-            .with_children(|panel| {
-                panel.spawn((
-                    TextBundle::from_section(
-                        "",
-                        TextStyle {
-                            font_size: 14.0,
-                            color: Color::srgb(0.9, 0.85, 0.5),
-                            ..default()
-                        },
-                    ),
-                    DialogText,
-                ));
-                panel.spawn((
+            parent
+                .spawn((
                     NodeBundle {
                         style: Style {
-                            width: Val::Percent(100.0),
+                            width: Val::Px(350.0),
+                            height: Val::Px(200.0),
+                            position_type: PositionType::Absolute,
+                            right: Val::Px(10.0),
+                            top: Val::Px(80.0),
+                            padding: UiRect::all(Val::Px(8.0)),
                             flex_direction: FlexDirection::Column,
-                            margin: UiRect::top(Val::Px(10.0)),
+                            display: Display::None,
                             ..default()
                         },
+                        background_color: Color::srgba(0.05, 0.05, 0.1, 0.9).into(),
+                        border_color: Color::srgb(0.3, 0.3, 0.3).into(),
                         ..default()
                     },
-                    DialogOptions,
-                ));
-            });
+                    CombatLogPanel,
+                ))
+                .with_children(|panel| {
+                    panel.spawn(TextBundle::from_section(
+                        "== 战斗日志 (L) ==",
+                        TextStyle {
+                            font: font.clone(),
+                            font_size: 12.0,
+                            color: Color::srgb(0.7, 0.7, 0.4),
+                            ..default()
+                        },
+                    ));
+                    panel.spawn((
+                        TextBundle::from_section(
+                            "",
+                            TextStyle {
+                                font: font.clone(),
+                                font_size: 12.0,
+                                color: Color::srgb(0.8, 0.8, 0.8),
+                                ..default()
+                            },
+                        ),
+                        CombatLogText,
+                    ));
+                });
+
+            // ── NPC 对话框 (底部中央, 默认隐藏) ──
+            parent
+                .spawn((
+                    NodeBundle {
+                        style: Style {
+                            width: Val::Px(500.0),
+                            position_type: PositionType::Absolute,
+                            left: Val::Percent(25.0),
+                            bottom: Val::Px(50.0),
+                            padding: UiRect::all(Val::Px(15.0)),
+                            flex_direction: FlexDirection::Column,
+                            display: Display::None,
+                            ..default()
+                        },
+                        background_color: Color::srgba(0.08, 0.08, 0.15, 0.97).into(),
+                        border_color: Color::srgb(0.6, 0.5, 0.2).into(),
+                        ..default()
+                    },
+                    DialogPanel,
+                ))
+                .with_children(|panel| {
+                    panel.spawn((
+                        TextBundle::from_section(
+                            "",
+                            TextStyle {
+                                font: font.clone(),
+                                font_size: 14.0,
+                                color: Color::srgb(0.9, 0.85, 0.5),
+                                ..default()
+                            },
+                        ),
+                        DialogText,
+                    ));
+                    panel.spawn((
+                        NodeBundle {
+                            style: Style {
+                                width: Val::Percent(100.0),
+                                flex_direction: FlexDirection::Column,
+                                margin: UiRect::top(Val::Px(10.0)),
+                                ..default()
+                            },
+                            ..default()
+                        },
+                        DialogOptions,
+                    ));
+                });
 
             // ── 底部帮助栏 ──
             parent.spawn((
@@ -339,8 +457,9 @@ pub fn setup_ui(mut commands: Commands) {
             ))
             .with_children(|footer| {
                 footer.spawn(TextBundle::from_section(
-                    "WASD移动 | 左键攻击/NPC/拾取 | I背包 | Q任务 | L战斗日志 | ESC关闭对话",
+                    "WASD移动 | 左键攻击/NPC/拾取 | I背包 | Q任务 | L战斗日志 | 滚轮缩放 | ESC关闭对话",
                     TextStyle {
+                        font: font.clone(),
                         font_size: 12.0,
                         color: Color::srgb(0.7, 0.7, 0.7),
                         ..default()
@@ -354,7 +473,7 @@ pub fn setup_ui(mut commands: Commands) {
 // UI 更新系统
 // ============================================================================
 
-/// 更新 HUD 文本 (顶部状态栏)
+/// 更新 HUD 文本和 HP/MP/经验条
 pub fn update_hud_system(
     player: Res<PlayerState>,
     entities: Res<EntityManager>,
@@ -362,6 +481,16 @@ pub fn update_hud_system(
     conn: Res<ConnectionState>,
     target: Res<TargetEntity>,
     mut text_query: Query<&mut Text, With<HudText>>,
+    mut hp_fill: Query<&mut Style, With<PlayerHpBarFill>>,
+    mut mp_fill: Query<&mut Style, (With<PlayerMpBarFill>, Without<PlayerHpBarFill>)>,
+    mut exp_fill: Query<
+        &mut Style,
+        (
+            With<PlayerExpBarFill>,
+            Without<PlayerHpBarFill>,
+            Without<PlayerMpBarFill>,
+        ),
+    >,
 ) {
     let text = if !conn.connected {
         "Rust MMO - 连接中...".to_string()
@@ -401,6 +530,30 @@ pub fn update_hud_system(
     for mut t in text_query.iter_mut() {
         t.sections[0].value = text.clone();
     }
+
+    // 更新 HP 条宽度
+    if player.max_hp > 0 {
+        let hp_ratio = (player.hp as f32 / player.max_hp as f32).clamp(0.0, 1.0) * 100.0;
+        for mut style in hp_fill.iter_mut() {
+            style.width = Val::Percent(hp_ratio);
+        }
+    }
+
+    // 更新 MP 条宽度
+    if player.max_mp > 0 {
+        let mp_ratio = (player.mp as f32 / player.max_mp as f32).clamp(0.0, 1.0) * 100.0;
+        for mut style in mp_fill.iter_mut() {
+            style.width = Val::Percent(mp_ratio);
+        }
+    }
+
+    // 更新经验条宽度
+    if player.max_exp > 0 {
+        let exp_ratio = (player.exp as f32 / player.max_exp as f32).clamp(0.0, 1.0) * 100.0;
+        for mut style in exp_fill.iter_mut() {
+            style.width = Val::Percent(exp_ratio);
+        }
+    }
 }
 
 /// 更新居中状态提示
@@ -435,7 +588,14 @@ pub fn update_panels_system(
     panels: Res<PanelVisibility>,
     mut inv_query: Query<&mut Style, With<InventoryPanel>>,
     mut quest_query: Query<&mut Style, (With<QuestPanel>, Without<InventoryPanel>)>,
-    mut log_query: Query<&mut Style, (With<CombatLogPanel>, Without<InventoryPanel>, Without<QuestPanel>)>,
+    mut log_query: Query<
+        &mut Style,
+        (
+            With<CombatLogPanel>,
+            Without<InventoryPanel>,
+            Without<QuestPanel>,
+        ),
+    >,
 ) {
     for mut style in inv_query.iter_mut() {
         style.display = if panels.inventory {
@@ -465,6 +625,7 @@ pub fn update_inventory_system(
     inventory: Res<Inventory>,
     equipment: Res<Equipment>,
     panels: Res<PanelVisibility>,
+    game_font: Res<GameFont>,
     content_parent: Query<Entity, With<InventoryContent>>,
     mut commands: Commands,
 ) {
@@ -477,7 +638,6 @@ pub fn update_inventory_system(
         return;
     };
 
-    // 清空旧内容
     commands.entity(parent_entity).despawn_descendants();
 
     let mut text = String::new();
@@ -512,7 +672,10 @@ pub fn update_inventory_system(
         text.push_str("(空)\n");
     } else {
         for item in &inventory.items {
-            text.push_str(&format!("{} x{} ({})\n", item.name, item.count, item.item_type));
+            text.push_str(&format!(
+                "{} x{} ({})\n",
+                item.name, item.count, item.item_type
+            ));
         }
     }
 
@@ -520,6 +683,7 @@ pub fn update_inventory_system(
         p.spawn(TextBundle::from_section(
             text,
             TextStyle {
+                font: game_font.font.clone(),
                 font_size: 13.0,
                 color: Color::srgb(0.85, 0.85, 0.85),
                 ..default()
@@ -532,6 +696,7 @@ pub fn update_inventory_system(
 pub fn update_quest_system(
     quest_log: Res<QuestLog>,
     panels: Res<PanelVisibility>,
+    game_font: Res<GameFont>,
     content_parent: Query<Entity, With<QuestContent>>,
     mut commands: Commands,
 ) {
@@ -552,7 +717,11 @@ pub fn update_quest_system(
         text.push_str("\n提示: 点击黄色 NPC 对话接任务");
     } else {
         for q in &quest_log.quests {
-            let status = if q.completed { "[可完成]" } else { "[进行中]" };
+            let status = if q.completed {
+                "[可完成]"
+            } else {
+                "[进行中]"
+            };
             text.push_str(&format!("{} {}\n", status, q.name));
             text.push_str(&format!("  进度: {}/{}\n", q.progress, q.target));
             text.push_str(&format!("  {}\n\n", q.desc));
@@ -563,6 +732,7 @@ pub fn update_quest_system(
         p.spawn(TextBundle::from_section(
             text,
             TextStyle {
+                font: game_font.font.clone(),
                 font_size: 13.0,
                 color: Color::srgb(0.85, 0.85, 0.85),
                 ..default()
@@ -596,6 +766,7 @@ pub fn update_combat_log_system(
 pub fn update_dialog_system(
     net: Res<NetworkResource>,
     keyboard: Res<ButtonInput<KeyCode>>,
+    game_font: Res<GameFont>,
     mut dialog_panel: Query<&mut Style, With<DialogPanel>>,
     mut dialog_text: Query<&mut Text, With<DialogText>>,
     options_parent: Query<Entity, With<DialogOptions>>,
@@ -609,7 +780,6 @@ pub fn update_dialog_system(
 
     let has_dialog = dialog_state.dialog.is_some();
 
-    // 更新面板可见性
     for mut style in dialog_panel.iter_mut() {
         style.display = if has_dialog {
             Display::Flex
@@ -624,7 +794,6 @@ pub fn update_dialog_system(
 
     let dialog_info = dialog_state.dialog.clone().unwrap();
 
-    // 更新对话文本
     let text = format!("【{}】\n{}", dialog_info.name, dialog_info.dialog);
     for mut t in dialog_text.iter_mut() {
         t.sections[0].value = text.clone();
@@ -684,6 +853,7 @@ pub fn update_dialog_system(
             p.spawn(TextBundle::from_section(
                 format!("[{}] {}", i + 1, opt.label),
                 TextStyle {
+                    font: game_font.font.clone(),
                     font_size: 14.0,
                     color: Color::srgb(0.8, 0.8, 1.0),
                     ..default()

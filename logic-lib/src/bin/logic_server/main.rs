@@ -67,6 +67,8 @@ use types::*;
 use utils::*;
 use state::*;
 
+use logic_lib::game_proto as gp;
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -208,15 +210,12 @@ impl LogicService for MockLogicService {
         // 8. 给自己发任务列表 (5005)
         messages.push(codec::dm_proto(uid, 5005, &player.to_quests_proto(), 1));
 
-        // 9. 给自己发NPC和怪物列表 (9002)
-        let npcs_json: Vec<String> = self.state.npcs.iter().map(|n| n.to_json()).collect();
-        let mobs_json: Vec<String> = self.state.mobs.iter().map(|m| m.to_list_entry()).collect();
-        let entity_json = serde_json::json!({
-            "npcs": npcs_json,
-            "mobs": mobs_json,
-        })
-        .to_string();
-        messages.push(dm(uid, 9002, entity_json, 0));
+        // 9. 给自己发NPC和怪物列表 (9002, proto 编码)
+        let entity_list = gp::EntityList {
+            npcs: self.state.npcs.iter().map(|n| n.to_entity_list_entry()).collect(),
+            mobs: self.state.mobs.iter().map(|m| m.to_entity_list_entry()).collect(),
+        };
+        messages.push(codec::dm_proto(uid, 9002, &entity_list, 0));
 
         self.state.players.insert(uid, player);
 
