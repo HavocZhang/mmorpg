@@ -50,6 +50,7 @@ mod types;
 mod utils;
 mod state;
 mod handlers;
+mod codec;
 #[cfg(test)]
 mod tests;
 

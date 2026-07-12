@@ -65,6 +65,8 @@ canvas{display:block}#status{position:absolute;top:8px;left:8px;font-size:11px;p
 <div class="p"><h3>💬聊天</h3><div id="chat"></div><input id="cin" placeholder="Enter..."></div></div></div>
 <div id="bot"><span style="font-size:10px;color:#777">技能:</span><div class="sk" onclick="k(1)">⚔</div><div class="sk" onclick="k(2)">💥</div><div class="sk" onclick="k(3)">🔥</div><div class="sk" onclick="k(4)">❄</div><div class="sk" onclick="k(5)">💚</div><span style="margin:0 8px;color:#555">|</span><span style="font-size:10px;color:#777">药水:</span><div class="sk" onclick="it(6,6)">🧪</div><div class="sk" onclick="it(7,7)">💧</div></div>
 <div id="dlg"><h2 id="dt"></h2><p id="dc"></p><div id="dq"></div><div id="da"></div></div></div>
+<script src="https://cdn.jsdelivr.net/npm/protobufjs@7/dist/protobuf.min.js"></script>
+<script src="sdk/proto_sdk.js"></script>
 <script>
 // ====== Crypto SDK ======
 const M=[0x4D,0x4D],V=1,H=16,K='00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff',W='ws://127.0.0.1:9000';
@@ -79,7 +81,18 @@ async function P(m,pl){const e=await E(pl),h=new Uint8Array(H);h[0]=M[0];h[1]=M[
 // ====== Network ======
 let ws,uid,S=async(t)=>{document.getElementById('status').textContent=t};
 async function go(uidv){uid=uidv;return new Promise((rv,rj)=>{ws=new WebSocket(W);ws.binaryType='arraybuffer';ws.onopen=async()=>{ws.send(await P(1,JSON.stringify({uid,token:'tok_abcdefgh',version:V,timestamp:Math.floor(Date.now()/1e3)})));rv()};ws.onmessage=e=>onD(new Uint8Array(e.data));ws.onclose=()=>S('断开-刷新重连');ws.onerror=()=>rj(new Error('ws'));setTimeout(()=>rj(new Error('timeout')),5000)})}
-async function sd(m,d){if(ws&&ws.readyState===1)ws.send(await P(m,typeof d=='string'?d:JSON.stringify(d)))}
+async function sd(m,d){
+  if(!ws||ws.readyState!==1)return;
+  // proto 消息用 proto 编码，其他用 JSON
+  const protoIds=[1,1001,1002,1003,1004,1005,1006,1007,1008,1009,1010,1011,2001,2002,2003,2004,3001,4001,4002];
+  let payload;
+  if(protoIds.includes(m)&&typeof d==='object'){
+    try{payload=ProtoSDK.encode(m,d)}catch(e){payload=JSON.stringify(d)}
+  }else{
+    payload=typeof d=='string'?d:JSON.stringify(d);
+  }
+  ws.send(await P(m,payload))
+}
 
 // ====== State ======
 let me={lvl:1,hp:100,mh:100,mp:50,mm:50,xp:0,atk:10,def:5,name:'',x:400,y:300,ready:false,prevAtk:10,prevDef:5,gold:0,class:0,classIcon:'',talentPts:0,talents:[]};
@@ -203,7 +216,29 @@ function getInvSorted(){
 }
 
 // ====== Message Dispatch ======
-async function onD(data){let off=0;while(off+H<=data.length){if(data[off]!==M[0]||data[off+1]!==M[1]){off++;continue}const v=new DataView(data.buffer,data.byteOffset,data.byteLength);const bl=v.getUint16(off+6,false);if(off+H+bl>data.length)break;const mid=v.getUint16(off+4,false);try{const p=await D(data.subarray(off+H,off+H+bl));const j=JSON.parse(new TextDecoder().decode(p));h(mid,j)}catch(e){}off+=H+bl}}
+async function onD(data){
+  let off=0;
+  while(off+H<=data.length){
+    if(data[off]!==M[0]||data[off+1]!==M[1]){off++;continue}
+    const v=new DataView(data.buffer,data.byteOffset,data.byteLength);
+    const bl=v.getUint16(off+6,false);
+    if(off+H+bl>data.length)break;
+    const mid=v.getUint16(off+4,false);
+    try{
+      const p=await D(data.subarray(off+H,off+H+bl));
+      // proto 消息用 proto 解码，其他用 JSON；JSON 以 '{' 开头(0x7B)，proto 不以 '{' 开头
+      const protoDownIds=[5001,5002,5003,5004,5005,5006,6001,6002,6003,8001,8002,8003,8004,9002];
+      let j;
+      if(protoDownIds.includes(mid)&&p.length>0&&p[0]!==0x7B){
+        try{j=ProtoSDK.decode(mid,p)}catch(e){j=JSON.parse(new TextDecoder().decode(p))}
+      }else{
+        j=JSON.parse(new TextDecoder().decode(p));
+      }
+      h(mid,j)
+    }catch(e){}
+    off+=H+bl
+  }
+}
 function h(m,b){switch(m){
 case 5001:{
   const oldAtk=me.atk,oldDef=me.def,oldGold=me.gold;
@@ -514,6 +549,8 @@ async function doLogin(){
   document.getElementById('enterBtn').textContent='连接中...';
   document.getElementById('enterBtn').disabled=true;
   try{
+    S('初始化协议...');
+    try{await ProtoSDK.init()}catch(e){console.warn('ProtoSDK init failed, fallback to JSON:',e)}
     S('连接...');await go(u);
     await new Promise(r=>setTimeout(r,2500));
     document.getElementById('login').style.display='none';

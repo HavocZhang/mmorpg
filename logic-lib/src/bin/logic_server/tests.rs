@@ -634,3 +634,612 @@ fn test_enhance_full_progression() {
     let final_atk = state.players.get(&1).map(|p| p.total_atk()).unwrap_or(0);
     assert!(final_atk > prev_atk, "强化后atk应增长: {} -> {}", prev_atk, final_atk);
 }
+
+// ════════════════════════════════════════════════════════════════
+// Protobuf 编解码适配层测试
+// ════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_codec_decode_proto_move_request() {
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+
+    let proto_msg = gp::MoveRequest { x: 500.0, y: 300.0, dir: 2 };
+    let payload = proto_msg.encode_to_vec();
+
+    let decoded = super::codec::decode_upstream(3001, &payload);
+    match decoded {
+        super::codec::UpstreamMsg::MoveRequest(m) => {
+            assert_eq!(m.x, 500.0);
+            assert_eq!(m.y, 300.0);
+            assert_eq!(m.dir, 2);
+        }
+        _ => panic!("应解码为 MoveRequest"),
+    }
+}
+
+#[test]
+fn test_codec_decode_json_move_request_fallback() {
+    // JSON 客户端发的消息也要能解析
+    let json_payload = r#"{"x":500.0,"y":300.0,"dir":2}"#.as_bytes();
+
+    let decoded = super::codec::decode_upstream(3001, json_payload);
+    match decoded {
+        super::codec::UpstreamMsg::MoveRequest(m) => {
+            assert_eq!(m.x, 500.0);
+            assert_eq!(m.y, 300.0);
+            assert_eq!(m.dir, 2);
+        }
+        _ => panic!("JSON fallback 应解码为 MoveRequest"),
+    }
+}
+
+#[test]
+fn test_codec_decode_proto_attack_request() {
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+
+    let proto_msg = gp::AttackRequest { target_uid: 10001 };
+    let payload = proto_msg.encode_to_vec();
+
+    let decoded = super::codec::decode_upstream(1001, &payload);
+    match decoded {
+        super::codec::UpstreamMsg::AttackRequest(m) => {
+            assert_eq!(m.target_uid, 10001);
+        }
+        _ => panic!("应解码为 AttackRequest"),
+    }
+}
+
+#[test]
+fn test_codec_decode_json_attack_request_fallback() {
+    let json_payload = r#"{"targetUid":10001}"#.as_bytes();
+
+    let decoded = super::codec::decode_upstream(1001, json_payload);
+    match decoded {
+        super::codec::UpstreamMsg::AttackRequest(m) => {
+            assert_eq!(m.target_uid, 10001);
+        }
+        _ => panic!("JSON fallback 应解码为 AttackRequest"),
+    }
+}
+
+#[test]
+fn test_codec_json_fallback_for_unmigrated_messages() {
+    // 未迁移的消息（如 2501 创建公会）应走 JsonFallback
+    // 1005 接受任务已迁移到 proto，不再走 JsonFallback
+    let json_payload = r#"{"name":"测试公会"}"#.as_bytes();
+
+    let decoded = super::codec::decode_upstream(2501, json_payload);
+    match decoded {
+        super::codec::UpstreamMsg::JsonFallback(v) => {
+            assert_eq!(v.get("name").and_then(|x| x.as_str()), Some("测试公会"));
+        }
+        _ => panic!("未迁移消息应走 JsonFallback"),
+    }
+}
+
+#[test]
+fn test_codec_dm_proto_encodes_correctly() {
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+
+    let stats = gp::PlayerStats {
+        uid: 12345, name: "测试".to_string(), hp: 100, max_hp: 100,
+        mp: 50, max_mp: 50, level: 5, exp: 200, max_exp: 500,
+        x: 400.0, y: 300.0, atk: 20, def: 10, gold: 1000,
+        class_id: 1, talent_points: 3,
+    };
+    let msg = super::codec::dm_proto(12345, 5001, &stats, 0);
+
+    assert_eq!(msg.target_uid, 12345);
+    assert_eq!(msg.msg_id, 5001);
+    // 验证 payload 能被 proto 解码回来
+    let decoded = gp::PlayerStats::decode(&msg.payload[..]).unwrap();
+    assert_eq!(decoded.uid, 12345);
+    assert_eq!(decoded.name, "测试");
+    assert_eq!(decoded.hp, 100);
+}
+
+#[test]
+fn test_move_request_proto_path_in_process_message() {
+    // BDD: 玩家用 proto 发送移动消息，服务端应正确处理
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+    use rust_mmo_gate::grpc_router::proto::gate::ForwardResponse;
+
+    let state = GameState::test_new();
+    add_test_player(&state, 50001, 100.0, 100.0);
+
+    let proto_msg = gp::MoveRequest { x: 500.0, y: 300.0, dir: 0 };
+    let payload = proto_msg.encode_to_vec();
+
+    let resp = state.process_message(50001, 3001, &payload);
+    // 应返回 ForwardResponse（不 panic、不卡死）
+    let _resp: ForwardResponse = resp;
+
+    // 验证玩家位置已更新
+    let player = state.players.get(&50001).unwrap();
+    assert_eq!(player.x, 500.0);
+    assert_eq!(player.y, 300.0);
+}
+
+#[test]
+fn test_move_request_json_path_still_works() {
+    // BDD: 旧客户端用 JSON 发送移动消息，服务端仍应正确处理
+    use rust_mmo_gate::grpc_router::proto::gate::ForwardResponse;
+
+    let state = GameState::test_new();
+    add_test_player(&state, 50002, 100.0, 100.0);
+
+    let json_payload = r#"{"x":600.0,"y":400.0,"dir":1}"#.as_bytes();
+
+    let resp = state.process_message(50002, 3001, json_payload);
+    let _resp: ForwardResponse = resp;
+
+    let player = state.players.get(&50002).unwrap();
+    assert_eq!(player.x, 600.0);
+    assert_eq!(player.y, 400.0);
+}
+
+// ════════════════════════════════════════════════════════════════
+// Protobuf 解码路径测试 — 第二批迁移消息 (1002-1011, 2001-2004, 4001-4002)
+// ════════════════════════════════════════════════════════════════
+
+#[test]
+fn test_codec_decode_proto_skill_attack() {
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+
+    let msg = gp::SkillAttackRequest { skill_id: 2, target_uid: 10001 };
+    let buf = msg.encode_to_vec();
+    let decoded = super::codec::decode_upstream(1002, &buf);
+    match decoded {
+        super::codec::UpstreamMsg::SkillAttackRequest(m) => {
+            assert_eq!(m.skill_id, 2);
+            assert_eq!(m.target_uid, 10001);
+        }
+        _ => panic!("应解码为 SkillAttackRequest"),
+    }
+}
+
+#[test]
+fn test_codec_decode_json_skill_attack_fallback() {
+    let buf = r#"{"skillId":2,"targetUid":10001}"#.as_bytes();
+    let decoded = super::codec::decode_upstream(1002, buf);
+    match decoded {
+        super::codec::UpstreamMsg::SkillAttackRequest(m) => {
+            assert_eq!(m.skill_id, 2);
+            assert_eq!(m.target_uid, 10001);
+        }
+        _ => panic!("JSON fallback 应解码为 SkillAttackRequest"),
+    }
+}
+
+#[test]
+fn test_codec_all_proto_messages_roundtrip() {
+    // 测试所有新迁移消息的 proto 编解码往返
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+
+    // PickupRequest
+    let msg = gp::PickupRequest { drop_id: 50001 };
+    let decoded = super::codec::decode_upstream(1003, &msg.encode_to_vec());
+    match decoded {
+        super::codec::UpstreamMsg::PickupRequest(m) => assert_eq!(m.drop_id, 50001),
+        _ => panic!("应解码为 PickupRequest"),
+    }
+
+    // EquipRequest
+    let msg = gp::EquipRequest { item_id: 1, slot: "weapon".to_string() };
+    let decoded = super::codec::decode_upstream(1004, &msg.encode_to_vec());
+    match decoded {
+        super::codec::UpstreamMsg::EquipRequest(m) => {
+            assert_eq!(m.item_id, 1);
+            assert_eq!(m.slot, "weapon");
+        }
+        _ => panic!("应解码为 EquipRequest"),
+    }
+
+    // AcceptQuestRequest
+    let msg = gp::AcceptQuestRequest { quest_id: 1 };
+    let decoded = super::codec::decode_upstream(1005, &msg.encode_to_vec());
+    match decoded {
+        super::codec::UpstreamMsg::AcceptQuestRequest(m) => assert_eq!(m.quest_id, 1),
+        _ => panic!("应解码为 AcceptQuestRequest"),
+    }
+
+    // CompleteQuestRequest
+    let msg = gp::CompleteQuestRequest { quest_id: 1 };
+    let decoded = super::codec::decode_upstream(1006, &msg.encode_to_vec());
+    match decoded {
+        super::codec::UpstreamMsg::CompleteQuestRequest(m) => assert_eq!(m.quest_id, 1),
+        _ => panic!("应解码为 CompleteQuestRequest"),
+    }
+
+    // NpcInteractRequest
+    let msg = gp::NpcInteractRequest { npc_id: 1 };
+    let decoded = super::codec::decode_upstream(1007, &msg.encode_to_vec());
+    match decoded {
+        super::codec::UpstreamMsg::NpcInteractRequest(m) => assert_eq!(m.npc_id, 1),
+        _ => panic!("应解码为 NpcInteractRequest"),
+    }
+
+    // UseItemRequest
+    let msg = gp::UseItemRequest { item_id: 6 };
+    let decoded = super::codec::decode_upstream(1008, &msg.encode_to_vec());
+    match decoded {
+        super::codec::UpstreamMsg::UseItemRequest(m) => assert_eq!(m.item_id, 6),
+        _ => panic!("应解码为 UseItemRequest"),
+    }
+
+    // ShopBuyRequest
+    let msg = gp::ShopBuyRequest { item_id: 6, count: 2 };
+    let decoded = super::codec::decode_upstream(1009, &msg.encode_to_vec());
+    match decoded {
+        super::codec::UpstreamMsg::ShopBuyRequest(m) => {
+            assert_eq!(m.item_id, 6);
+            assert_eq!(m.count, 2);
+        }
+        _ => panic!("应解码为 ShopBuyRequest"),
+    }
+
+    // ShopSellRequest
+    let msg = gp::ShopSellRequest { item_id: 6, count: 1 };
+    let decoded = super::codec::decode_upstream(1010, &msg.encode_to_vec());
+    match decoded {
+        super::codec::UpstreamMsg::ShopSellRequest(m) => {
+            assert_eq!(m.item_id, 6);
+            assert_eq!(m.count, 1);
+        }
+        _ => panic!("应解码为 ShopSellRequest"),
+    }
+
+    // EnhanceRequest
+    let msg = gp::EnhanceRequest { slot: "weapon".to_string() };
+    let decoded = super::codec::decode_upstream(1011, &msg.encode_to_vec());
+    match decoded {
+        super::codec::UpstreamMsg::EnhanceRequest(m) => assert_eq!(m.slot, "weapon"),
+        _ => panic!("应解码为 EnhanceRequest"),
+    }
+
+    // ChatRequest
+    let msg = gp::ChatRequest { text: "hello".to_string(), channel: "world".to_string() };
+    let decoded = super::codec::decode_upstream(2001, &msg.encode_to_vec());
+    match decoded {
+        super::codec::UpstreamMsg::ChatRequest(m) => {
+            assert_eq!(m.text, "hello");
+            assert_eq!(m.channel, "world");
+        }
+        _ => panic!("应解码为 ChatRequest"),
+    }
+
+    // PartyInviteRequest
+    let msg = gp::PartyInviteRequest { target_uid: 20002 };
+    let decoded = super::codec::decode_upstream(2002, &msg.encode_to_vec());
+    match decoded {
+        super::codec::UpstreamMsg::PartyInviteRequest(m) => assert_eq!(m.target_uid, 20002),
+        _ => panic!("应解码为 PartyInviteRequest"),
+    }
+
+    // PartyAcceptRequest
+    let msg = gp::PartyAcceptRequest { inviter_uid: 20001 };
+    let decoded = super::codec::decode_upstream(2003, &msg.encode_to_vec());
+    match decoded {
+        super::codec::UpstreamMsg::PartyAcceptRequest(m) => assert_eq!(m.inviter_uid, 20001),
+        _ => panic!("应解码为 PartyAcceptRequest"),
+    }
+
+    // PartyLeaveRequest (无字段)
+    let msg = gp::PartyLeaveRequest {};
+    let decoded = super::codec::decode_upstream(2004, &msg.encode_to_vec());
+    assert!(matches!(decoded, super::codec::UpstreamMsg::PartyLeaveRequest(_)));
+
+    // QueryPlayersRequest (无字段)
+    let msg = gp::QueryPlayersRequest {};
+    let decoded = super::codec::decode_upstream(4001, &msg.encode_to_vec());
+    assert!(matches!(decoded, super::codec::UpstreamMsg::QueryPlayersRequest(_)));
+
+    // QueryEntitiesRequest (无字段)
+    let msg = gp::QueryEntitiesRequest {};
+    let decoded = super::codec::decode_upstream(4002, &msg.encode_to_vec());
+    assert!(matches!(decoded, super::codec::UpstreamMsg::QueryEntitiesRequest(_)));
+}
+
+#[test]
+fn test_codec_all_json_fallbacks() {
+    // 测试所有新迁移消息的 JSON fallback 路径
+
+    // PickupRequest
+    let decoded = super::codec::decode_upstream(1003, r#"{"dropId":50001}"#.as_bytes());
+    match decoded {
+        super::codec::UpstreamMsg::PickupRequest(m) => assert_eq!(m.drop_id, 50001),
+        _ => panic!("JSON fallback 应解码为 PickupRequest"),
+    }
+
+    // EquipRequest
+    let decoded = super::codec::decode_upstream(1004, r#"{"itemId":1,"slot":"weapon"}"#.as_bytes());
+    match decoded {
+        super::codec::UpstreamMsg::EquipRequest(m) => {
+            assert_eq!(m.item_id, 1);
+            assert_eq!(m.slot, "weapon");
+        }
+        _ => panic!("JSON fallback 应解码为 EquipRequest"),
+    }
+
+    // AcceptQuestRequest
+    let decoded = super::codec::decode_upstream(1005, r#"{"questId":1}"#.as_bytes());
+    match decoded {
+        super::codec::UpstreamMsg::AcceptQuestRequest(m) => assert_eq!(m.quest_id, 1),
+        _ => panic!("JSON fallback 应解码为 AcceptQuestRequest"),
+    }
+
+    // CompleteQuestRequest
+    let decoded = super::codec::decode_upstream(1006, r#"{"questId":1}"#.as_bytes());
+    match decoded {
+        super::codec::UpstreamMsg::CompleteQuestRequest(m) => assert_eq!(m.quest_id, 1),
+        _ => panic!("JSON fallback 应解码为 CompleteQuestRequest"),
+    }
+
+    // NpcInteractRequest
+    let decoded = super::codec::decode_upstream(1007, r#"{"npcId":1}"#.as_bytes());
+    match decoded {
+        super::codec::UpstreamMsg::NpcInteractRequest(m) => assert_eq!(m.npc_id, 1),
+        _ => panic!("JSON fallback 应解码为 NpcInteractRequest"),
+    }
+
+    // UseItemRequest
+    let decoded = super::codec::decode_upstream(1008, r#"{"itemId":6}"#.as_bytes());
+    match decoded {
+        super::codec::UpstreamMsg::UseItemRequest(m) => assert_eq!(m.item_id, 6),
+        _ => panic!("JSON fallback 应解码为 UseItemRequest"),
+    }
+
+    // ShopBuyRequest
+    let decoded = super::codec::decode_upstream(1009, r#"{"itemId":6,"count":2}"#.as_bytes());
+    match decoded {
+        super::codec::UpstreamMsg::ShopBuyRequest(m) => {
+            assert_eq!(m.item_id, 6);
+            assert_eq!(m.count, 2);
+        }
+        _ => panic!("JSON fallback 应解码为 ShopBuyRequest"),
+    }
+
+    // ShopSellRequest
+    let decoded = super::codec::decode_upstream(1010, r#"{"itemId":6,"count":1}"#.as_bytes());
+    match decoded {
+        super::codec::UpstreamMsg::ShopSellRequest(m) => {
+            assert_eq!(m.item_id, 6);
+            assert_eq!(m.count, 1);
+        }
+        _ => panic!("JSON fallback 应解码为 ShopSellRequest"),
+    }
+
+    // EnhanceRequest
+    let decoded = super::codec::decode_upstream(1011, r#"{"slot":"armor"}"#.as_bytes());
+    match decoded {
+        super::codec::UpstreamMsg::EnhanceRequest(m) => assert_eq!(m.slot, "armor"),
+        _ => panic!("JSON fallback 应解码为 EnhanceRequest"),
+    }
+
+    // ChatRequest
+    let decoded = super::codec::decode_upstream(2001, r#"{"text":"hi","channel":"world"}"#.as_bytes());
+    match decoded {
+        super::codec::UpstreamMsg::ChatRequest(m) => {
+            assert_eq!(m.text, "hi");
+            assert_eq!(m.channel, "world");
+        }
+        _ => panic!("JSON fallback 应解码为 ChatRequest"),
+    }
+
+    // PartyInviteRequest
+    let decoded = super::codec::decode_upstream(2002, r#"{"targetUid":20002}"#.as_bytes());
+    match decoded {
+        super::codec::UpstreamMsg::PartyInviteRequest(m) => assert_eq!(m.target_uid, 20002),
+        _ => panic!("JSON fallback 应解码为 PartyInviteRequest"),
+    }
+
+    // PartyAcceptRequest
+    let decoded = super::codec::decode_upstream(2003, r#"{"inviterUid":20001}"#.as_bytes());
+    match decoded {
+        super::codec::UpstreamMsg::PartyAcceptRequest(m) => assert_eq!(m.inviter_uid, 20001),
+        _ => panic!("JSON fallback 应解码为 PartyAcceptRequest"),
+    }
+
+    // PartyLeaveRequest (无字段，空 JSON 也应返回 PartyLeaveRequest)
+    let decoded = super::codec::decode_upstream(2004, b"{}");
+    assert!(matches!(decoded, super::codec::UpstreamMsg::PartyLeaveRequest(_)));
+
+    // QueryPlayersRequest (无字段)
+    let decoded = super::codec::decode_upstream(4001, b"{}");
+    assert!(matches!(decoded, super::codec::UpstreamMsg::QueryPlayersRequest(_)));
+
+    // QueryEntitiesRequest (无字段)
+    let decoded = super::codec::decode_upstream(4002, b"{}");
+    assert!(matches!(decoded, super::codec::UpstreamMsg::QueryEntitiesRequest(_)));
+}
+
+// ────────────────────────────────────────────────────────────
+// BDD 行为测试 — proto 路径在 process_message 中端到端验证
+// ────────────────────────────────────────────────────────────
+
+#[test]
+fn test_skill_attack_proto_path() {
+    // BDD: 玩家用 proto 发送技能攻击，服务端应正确处理
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+
+    let state = GameState::test_new();
+    add_test_player(&state, 60001, 100.0, 100.0);
+    add_test_mob(&state, 10001, 1, 100.0, 100.0); // 史莱姆
+
+    let msg = gp::SkillAttackRequest { skill_id: 1, target_uid: 10001 };
+    let payload = msg.encode_to_vec();
+
+    let _resp = state.process_message(60001, 1002, &payload);
+    // 不 panic 即通过
+}
+
+#[test]
+fn test_quest_accept_proto_path() {
+    // BDD: 玩家用 proto 接受任务
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+
+    let state = GameState::test_new();
+    add_test_player(&state, 60002, 200.0, 200.0);
+
+    let msg = gp::AcceptQuestRequest { quest_id: 1 };
+    let payload = msg.encode_to_vec();
+
+    let _resp = state.process_message(60002, 1005, &payload);
+    // 验证任务已接受
+    let player = state.players.get(&60002).unwrap();
+    assert!(!player.quests.is_empty(), "任务列表不应为空");
+}
+
+#[test]
+fn test_quest_accept_json_path_still_works() {
+    // BDD: 旧客户端用 JSON 接受任务，服务端仍应正确处理
+    let state = GameState::test_new();
+    add_test_player(&state, 60003, 200.0, 200.0);
+
+    let json_payload = r#"{"questId":1}"#.as_bytes();
+    let _resp = state.process_message(60003, 1005, json_payload);
+
+    let player = state.players.get(&60003).unwrap();
+    assert!(!player.quests.is_empty(), "JSON 路径任务列表不应为空");
+}
+
+#[test]
+fn test_chat_proto_path() {
+    // BDD: 玩家用 proto 发送聊天消息，服务端应正确广播
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+
+    let state = GameState::test_new();
+    add_test_player(&state, 60004, 300.0, 300.0);
+
+    let msg = gp::ChatRequest { text: "hello proto".to_string(), channel: "world".to_string() };
+    let payload = msg.encode_to_vec();
+
+    let resp = state.process_message(60004, 2001, &payload);
+    // 应有 7001 ack 和 7002 广播
+    let has_ack = resp.messages.iter().any(|m| m.msg_id == 7001);
+    assert!(has_ack, "应有聊天 ACK");
+    let has_broadcast = resp.messages.iter().any(|m| {
+        m.msg_id == 7002 && String::from_utf8_lossy(&m.payload).contains("hello proto")
+    });
+    assert!(has_broadcast, "应有聊天广播");
+}
+
+#[test]
+fn test_chat_json_path_still_works() {
+    // BDD: 旧客户端用 JSON 发送聊天消息，服务端仍应正确处理
+    let state = GameState::test_new();
+    add_test_player(&state, 60005, 300.0, 300.0);
+
+    let json_payload = r#"{"text":"hello json","channel":"world"}"#.as_bytes();
+    let resp = state.process_message(60005, 2001, json_payload);
+
+    let has_broadcast = resp.messages.iter().any(|m| {
+        m.msg_id == 7002 && String::from_utf8_lossy(&m.payload).contains("hello json")
+    });
+    assert!(has_broadcast, "JSON 聊天应有广播");
+}
+
+#[test]
+fn test_query_players_proto_path() {
+    // BDD: 玩家用 proto 查询附近玩家
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+
+    let state = GameState::test_new();
+    add_test_player(&state, 60006, 400.0, 400.0);
+    add_test_player(&state, 60007, 410.0, 410.0);
+
+    let msg = gp::QueryPlayersRequest {};
+    let payload = msg.encode_to_vec();
+
+    let resp = state.process_message(60006, 4001, &payload);
+    // 应返回 9001 玩家列表
+    let has_list = resp.messages.iter().any(|m| m.msg_id == 9001);
+    assert!(has_list, "应有玩家列表 9001");
+}
+
+#[test]
+fn test_query_entities_proto_path() {
+    // BDD: 玩家用 proto 查询附近实体
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+
+    let state = GameState::test_new();
+    add_test_player(&state, 60008, 500.0, 500.0);
+
+    let msg = gp::QueryEntitiesRequest {};
+    let payload = msg.encode_to_vec();
+
+    let resp = state.process_message(60008, 4002, &payload);
+    // 应返回 9002 实体列表
+    let has_list = resp.messages.iter().any(|m| m.msg_id == 9002);
+    assert!(has_list, "应有实体列表 9002");
+}
+
+#[test]
+fn test_party_leave_proto_path() {
+    // BDD: 玩家用 proto 离开队伍（无字段消息）
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+
+    let state = GameState::test_new();
+    add_test_player(&state, 60009, 500.0, 500.0);
+
+    let msg = gp::PartyLeaveRequest {};
+    let payload = msg.encode_to_vec();
+
+    // 不 panic 即通过（玩家不在队伍中也不应崩溃）
+    let _resp = state.process_message(60009, 2004, &payload);
+}
+
+#[test]
+fn test_enhance_proto_path() {
+    // BDD: 玩家用 proto 请求装备强化
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+
+    let state = GameState::test_new();
+    add_test_player(&state, 60010, 500.0, 500.0);
+    // 给玩家装备铁剑和足够金币
+    if let Some(mut p) = state.players.get_mut(&60010) {
+        p.weapon = Some(1);
+        p.gold = 1000;
+    }
+
+    let msg = gp::EnhanceRequest { slot: "weapon".to_string() };
+    let payload = msg.encode_to_vec();
+
+    let resp = state.process_message(60010, 1011, &payload);
+    // 强化 +1 应成功（100%概率）
+    let success = resp.messages.iter().any(|m| {
+        m.msg_id == 5006 && String::from_utf8_lossy(&m.payload).contains("enhance_result")
+    });
+    assert!(success, "proto 路径强化应返回结果");
+}
+
+#[test]
+fn test_npc_interact_proto_path() {
+    // BDD: 玩家用 proto 与 NPC 交互
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+
+    let state = GameState::test_new();
+    add_test_player(&state, 60011, 500.0, 500.0);
+
+    let msg = gp::NpcInteractRequest { npc_id: 1 };
+    let payload = msg.encode_to_vec();
+
+    let resp = state.process_message(60011, 1007, &payload);
+    // 应返回 5006 NPC 对话
+    let has_dialog = resp.messages.iter().any(|m| m.msg_id == 5006);
+    assert!(has_dialog, "proto 路径 NPC 交互应返回对话");
+}
