@@ -33,7 +33,7 @@ fn main() {
                 .set(WindowPlugin {
                     primary_window: Some(Window {
                         title: "Rust MMO - Bevy Client".to_string(),
-                        resolution: bevy::window::WindowResolution::new(1024.0, 768.0),
+                        resolution: bevy::window::WindowResolution::new(1280.0, 800.0),
                         ..default()
                     }),
                     ..default()
@@ -48,7 +48,14 @@ fn main() {
         .init_resource::<resources::GameConfig>()
         .init_resource::<resources::InputState>()
         .init_resource::<resources::ConnectionState>()
-        .init_resource::<resources::UiTextCache>()
+        .init_resource::<resources::Inventory>()
+        .init_resource::<resources::Equipment>()
+        .init_resource::<resources::QuestLog>()
+        .init_resource::<resources::DropManager>()
+        .init_resource::<resources::NpcDialogState>()
+        .init_resource::<resources::TargetEntity>()
+        .init_resource::<resources::CombatLog>()
+        .init_resource::<resources::PanelVisibility>()
         // 渲染设置
         .insert_resource(ClearColor(Color::srgb(0.03, 0.03, 0.08)))
         // 启动系统
@@ -57,11 +64,26 @@ fn main() {
         .add_systems(
             Update,
             (
+                // 网络事件处理 (最先)
                 network::network_event_system,
+                // 输入处理
                 systems::movement_system,
+                systems::mouse_input_system,
+                systems::panel_toggle_system,
+                // 定时查询实体
+                systems::entity_query_timer,
+                // 渲染
                 systems::render_system,
                 systems::camera_follow_system,
-                ui::update_ui_system,
+                // UI 更新
+                ui::update_hud_system,
+                ui::update_panels_system,
+                ui::update_inventory_system,
+                ui::update_quest_system,
+                ui::update_combat_log_system,
+                ui::update_dialog_system,
+                // 连接后拉取配置/实体
+                on_connected_system,
             ),
         )
         .run();
@@ -72,16 +94,37 @@ fn setup(mut commands: Commands, net: Res<network::NetworkResource>) {
     // 2D 相机
     commands.spawn(Camera2dBundle::default());
 
-    // 创建一个简单的背景网格 (可选, 用一个大平面表示游戏区域)
-    // 暂不添加, 让 ClearColor 处理背景
-
     // 连接服务器 (TCP 直连网关 7888)
     info!("正在连接服务器 tcp://{}...", "127.0.0.1:7888");
     net.send(network::NetworkCommand::Connect {
         uid: LOGIN_UID,
         token: LOGIN_TOKEN.to_string(),
     });
+}
 
-    // 连接后会在 network_event_system 中收到 Connected 事件
-    // 登录包会在网络线程中自动发送
+/// 连接成功后拉取配置和实体列表 (只执行一次)
+fn on_connected_system(
+    net: Res<network::NetworkResource>,
+    conn: Res<resources::ConnectionState>,
+    player: Res<resources::PlayerState>,
+    config: Res<resources::GameConfig>,
+    mut sent: Local<bool>,
+) {
+    if !conn.connected || !player.logged_in || *sent {
+        return;
+    }
+    *sent = true;
+    // 拉取配置 (msg_id=101)
+    net.send(network::NetworkCommand::Send {
+        msg_id: 101,
+        payload: crate::codec::encode_query_config(),
+    });
+    // 查询附近实体 (msg_id=4002)
+    net.send(network::NetworkCommand::Send {
+        msg_id: 4002,
+        payload: crate::codec::encode_query_entities(),
+    });
+    info!("已发送配置拉取和实体查询请求");
+    // config 已在 resource 中，避免未使用警告
+    let _ = &config;
 }

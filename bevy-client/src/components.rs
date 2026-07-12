@@ -31,17 +31,6 @@ pub enum EntityType {
     Npc,
 }
 
-impl EntityType {
-    /// 根据 npc_type 字符串推断类型
-    pub fn from_npc_type(npc_type: &str) -> Self {
-        if npc_type.is_empty() {
-            EntityType::Mob
-        } else {
-            EntityType::Npc
-        }
-    }
-}
-
 /// 游戏世界坐标 (与 Bevy 的 Transform 分开，因为游戏坐标系 y 向下)
 #[derive(Component, Clone, Copy)]
 pub struct GamePosition {
@@ -82,8 +71,28 @@ impl HealthBar {
     }
 }
 
-/// 实体关联的 UI 文本标记 (用于查找并更新文本)
+/// 实体名称标签 (用于查找名称文本实体)
 #[derive(Component)]
 pub struct EntityLabel {
     pub entity_id: u64,
+}
+
+/// HP 条容器标记 (用于查找 HP 条实体)
+#[derive(Component)]
+pub struct HpBarMarker {
+    pub entity_id: u64,
+}
+
+/// 选中目标光环标记
+#[derive(Component)]
+pub struct SelectionRing {
+    pub entity_id: u64,
+}
+
+/// 掉落物品标记
+#[derive(Component)]
+pub struct DroppedItem {
+    pub drop_id: u64,
+    pub item_id: u32,
+    pub count: u32,
 }

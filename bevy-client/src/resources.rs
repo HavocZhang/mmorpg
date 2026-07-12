@@ -47,9 +47,9 @@ pub struct EntityInfo {
 }
 
 impl EntityInfo {
-    /// 推断实体类型
+    /// 是否为 NPC (entity_type 非空且不为 "mob")
     pub fn is_npc(&self) -> bool {
-        !self.entity_type.is_empty()
+        !self.entity_type.is_empty() && self.entity_type != "mob"
     }
 }
 
@@ -69,12 +69,143 @@ pub struct OtherPlayerInfo {
     pub y: f32,
 }
 
+/// 背包物品
+#[derive(Clone, Debug)]
+pub struct InventoryItem {
+    pub item_id: u32,
+    pub count: u32,
+    pub name: String,
+    pub item_type: String,
+    pub icon: String,
+}
+
+/// 装备槽
+#[derive(Clone, Debug, Default)]
+pub struct EquipmentSlot {
+    pub item_id: u32,
+    pub name: String,
+    pub icon: String,
+    pub enhance_level: u32,
+    pub empty: bool,
+}
+
+/// 装备数据
+#[derive(Clone, Debug, Default)]
+pub struct EquipmentData {
+    pub weapon: EquipmentSlot,
+    pub armor: EquipmentSlot,
+    pub accessory: EquipmentSlot,
+}
+
+/// 任务条目
+#[derive(Clone, Debug)]
+pub struct QuestEntry {
+    pub quest_id: u32,
+    pub name: String,
+    pub progress: u32,
+    pub target: u32,
+    pub desc: String,
+    pub completed: bool,
+}
+
+/// 掉落物品
+#[derive(Clone, Debug)]
+pub struct DropItem {
+    pub drop_id: u64,
+    pub item_id: u32,
+    pub count: u32,
+    pub x: f32,
+    pub y: f32,
+}
+
+/// NPC 对话信息
+#[derive(Clone, Debug, Default)]
+pub struct NpcDialogInfo {
+    pub npc_id: u32,
+    pub name: String,
+    pub dialog: String,
+    pub options: Vec<NpcDialogOption>,
+}
+
+/// NPC 对话选项
+#[derive(Clone, Debug)]
+pub struct NpcDialogOption {
+    pub label: String,
+    pub action: DialogAction,
+}
+
+/// 对话选项动作
+#[derive(Clone, Debug, PartialEq)]
+pub enum DialogAction {
+    /// 接受任务
+    AcceptQuest(u32),
+    /// 完成任务
+    CompleteQuest(u32),
+    /// 打开商店
+    OpenShop,
+    /// 关闭对话
+    Close,
+    /// 无动作 (纯文本)
+    None,
+}
+
+/// 玩家背包
+#[derive(Resource, Default)]
+pub struct Inventory {
+    pub items: Vec<InventoryItem>,
+}
+
+/// 玩家装备
+#[derive(Resource, Default)]
+pub struct Equipment {
+    pub data: EquipmentData,
+}
+
+/// 玩家任务列表
+#[derive(Resource, Default)]
+pub struct QuestLog {
+    pub quests: Vec<QuestEntry>,
+}
+
+/// 掉落物品管理器
+#[derive(Resource, Default)]
+pub struct DropManager {
+    pub drops: HashMap<u64, DropItem>,
+}
+
+/// NPC 对话状态
+#[derive(Resource, Default)]
+pub struct NpcDialogState {
+    pub dialog: Option<NpcDialogInfo>,
+}
+
+/// 当前选中目标
+#[derive(Resource, Default)]
+pub struct TargetEntity {
+    pub entity_id: Option<u64>,
+    pub is_mob: bool,
+}
+
+/// 战斗日志 (最近 N 条)
+#[derive(Resource, Default)]
+pub struct CombatLog {
+    pub entries: Vec<String>,
+}
+
+impl CombatLog {
+    pub fn push(&mut self, msg: String) {
+        self.entries.push(msg);
+        if self.entries.len() > 10 {
+            self.entries.remove(0);
+        }
+    }
+}
+
 /// 游戏配置 (从服务端拉取)
 #[derive(Resource, Default)]
 pub struct GameConfig {
     pub loaded: bool,
     pub items: Vec<serde_json::Value>,
-    #[allow(dead_code)]
     pub quests: Vec<serde_json::Value>,
 }
 
@@ -82,6 +213,7 @@ pub struct GameConfig {
 #[derive(Resource, Default)]
 pub struct InputState {
     pub last_move_time: u64,
+    pub last_attack_time: u64,
 }
 
 /// 网络连接状态
@@ -91,8 +223,10 @@ pub struct ConnectionState {
     pub connecting: bool,
 }
 
-/// UI 文本缓存 (用于更新 HUD)
+/// 面板可见性
 #[derive(Resource, Default)]
-pub struct UiTextCache {
-    pub hud_text: String,
+pub struct PanelVisibility {
+    pub inventory: bool,
+    pub quest: bool,
+    pub combat_log: bool,
 }

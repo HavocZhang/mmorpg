@@ -287,6 +287,12 @@ pub fn network_event_system(
     mut other_players: ResMut<crate::resources::OtherPlayerManager>,
     mut conn_state: ResMut<crate::resources::ConnectionState>,
     mut game_config: ResMut<crate::resources::GameConfig>,
+    mut inventory: ResMut<crate::resources::Inventory>,
+    mut equipment: ResMut<crate::resources::Equipment>,
+    mut quest_log: ResMut<crate::resources::QuestLog>,
+    mut drops: ResMut<crate::resources::DropManager>,
+    mut dialog_state: ResMut<crate::resources::NpcDialogState>,
+    mut combat_log: ResMut<crate::resources::CombatLog>,
     mut windows: Query<&mut bevy::window::Window>,
 ) {
     while let Ok(event) = net.recv_rx.try_recv() {
@@ -309,13 +315,18 @@ pub fn network_event_system(
                 }
             }
             NetworkEvent::Message { msg_id, payload } => {
-                println!("[NET] 收到消息 msg_id={} len={}", msg_id, payload.len());
                 crate::systems::handle_server_message(
                     msg_id,
                     &payload,
                     &mut player_state,
                     &mut entities,
                     &mut other_players,
+                    &mut inventory,
+                    &mut equipment,
+                    &mut quest_log,
+                    &mut drops,
+                    &mut dialog_state,
+                    &mut combat_log,
                     &mut game_config,
                 );
             }
@@ -325,3 +336,4 @@ pub fn network_event_system(
         }
     }
 }
+

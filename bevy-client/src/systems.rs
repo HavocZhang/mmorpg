@@ -1,24 +1,38 @@
 //! ECS 系统定义
 //!
 //! 系统是 Bevy ECS 中处理实体和资源的逻辑函数。
+//!
+//! 包含:
+//! - handle_server_message: 服务器下行消息分发 (被 network_event_system 调用)
+//! - movement_system: WASD 键盘移动
+//! - mouse_input_system: 鼠标点击攻击/NPC交互/拾取
+//! - panel_toggle_system: I/Q/L 键切换面板
+//! - render_system: 同步游戏实体到 Bevy ECS (Sprite + HP条 + 名称)
+//! - camera_follow_system: 相机跟随玩家
 
 use bevy::prelude::*;
 
 use crate::components::*;
-use crate::network::NetworkResource;
+use crate::network::{NetworkCommand, NetworkResource};
 use crate::resources::*;
 
 // ============================================================================
 // 服务器消息处理
 // ============================================================================
 
-/// 处理服务器下行消息
+/// 处理服务器下行消息 (由 network_event_system 调用)
 pub fn handle_server_message(
     msg_id: u16,
     payload: &[u8],
     player: &mut PlayerState,
     entities: &mut EntityManager,
     other_players: &mut OtherPlayerManager,
+    inventory: &mut Inventory,
+    equipment: &mut Equipment,
+    quest_log: &mut QuestLog,
+    drops: &mut DropManager,
+    dialog_state: &mut NpcDialogState,
+    combat_log: &mut CombatLog,
     game_config: &mut GameConfig,
 ) {
     match msg_id {
@@ -45,34 +59,6 @@ pub fn handle_server_message(
                         "登录成功: {} (UID={}, Lv{}, HP={}/{})",
                         player.name, player.uid, player.level, player.hp, player.max_hp
                     );
-                } else {
-                    debug!(
-                        "属性更新: HP={}/{}, MP={}/{}, Exp={}/{}",
-                        player.hp, player.max_hp, player.mp, player.max_mp, player.exp, player.max_exp
-                    );
-                }
-            } else if crate::codec::is_json_payload(payload) {
-                // JSON fallback (兼容旧服务端)
-                if let Ok(v) = serde_json::from_slice::<serde_json::Value>(payload) {
-                    if let Some(hp) = v.get("hp").and_then(|x| x.as_i64()) {
-                        player.hp = hp as i32;
-                    }
-                    if let Some(max_hp) = v.get("maxHp").and_then(|x| x.as_i64()) {
-                        player.max_hp = max_hp as i32;
-                    }
-                    if let Some(name) = v.get("name").and_then(|x| x.as_str()) {
-                        player.name = name.to_string();
-                    }
-                    if let Some(level) = v.get("level").and_then(|x| x.as_u64()) {
-                        player.level = level as u32;
-                    }
-                    if let Some(x) = v.get("x").and_then(|x| x.as_f64()) {
-                        player.x = x as f32;
-                    }
-                    if let Some(y) = v.get("y").and_then(|y| y.as_f64()) {
-                        player.y = y as f32;
-                    }
-                    player.logged_in = true;
                 }
             }
         }
@@ -94,9 +80,78 @@ pub fn handle_server_message(
                         player.level = update.level;
                     }
                     if update.gained > 0 {
-                        info!("获得 {} 经验", update.gained);
+                        combat_log.push(format!("获得 {} 经验", update.gained));
                     }
                 }
+            }
+        }
+
+        // 5003: 背包更新
+        5003 => {
+            if let Some(update) = crate::codec::decode_inventory_update(payload) {
+                inventory.items = update
+                    .items
+                    .into_iter()
+                    .map(|i| InventoryItem {
+                        item_id: i.item_id,
+                        count: i.count,
+                        name: i.name,
+                        item_type: i.item_type,
+                        icon: i.icon,
+                    })
+                    .collect();
+            }
+        }
+
+        // 5004: 装备更新
+        5004 => {
+            if let Some(update) = crate::codec::decode_equipment_update(payload) {
+                let conv = |s: Option<rust_mmo_gate::game_proto::EquipmentSlot>| -> EquipmentSlot {
+                    match s {
+                        Some(s) => EquipmentSlot {
+                            item_id: s.item_id,
+                            name: s.name,
+                            icon: s.icon,
+                            enhance_level: s.enhance_level,
+                            empty: s.empty,
+                        },
+                        None => EquipmentSlot::default(),
+                    }
+                };
+                equipment.data.weapon = conv(update.weapon);
+                equipment.data.armor = conv(update.armor);
+                equipment.data.accessory = conv(update.accessory);
+            }
+        }
+
+        // 5005: 任务更新
+        5005 => {
+            if let Some(update) = crate::codec::decode_quest_update(payload) {
+                quest_log.quests = update
+                    .quests
+                    .into_iter()
+                    .map(|q| QuestEntry {
+                        quest_id: q.quest_id,
+                        name: q.name,
+                        progress: q.progress,
+                        target: q.target,
+                        desc: q.desc,
+                        completed: q.completed,
+                    })
+                    .collect();
+            }
+        }
+
+        // 5006: NPC 对话
+        5006 => {
+            if let Some(dialog) = crate::codec::decode_npc_dialog(payload) {
+                let options = parse_dialog_options(&dialog.options_json, dialog.npc_id);
+                dialog_state.dialog = Some(NpcDialogInfo {
+                    npc_id: dialog.npc_id,
+                    name: dialog.name,
+                    dialog: dialog.dialog,
+                    options,
+                });
             }
         }
 
@@ -104,17 +159,19 @@ pub fn handle_server_message(
         6001 => {
             if let Some(result) = crate::codec::decode_combat_result(payload) {
                 if !result.error.is_empty() {
-                    info!("战斗错误: {}", result.error);
+                    combat_log.push(format!("战斗错误: {}", result.error));
+                } else if result.miss {
+                    combat_log.push(format!("攻击 {} 未命中!", result.target_name));
                 } else if result.swing {
-                    info!(
+                    combat_log.push(format!(
                         "普攻 {} 造成 {} 伤害 (剩余HP: {})",
                         result.target_name, result.damage, result.target_hp
-                    );
+                    ));
                 } else {
-                    info!(
+                    combat_log.push(format!(
                         "技能攻击 {} 造成 {} 伤害 (暴击: {})",
                         result.target_name, result.damage, result.crit
-                    );
+                    ));
                 }
             }
         }
@@ -134,15 +191,24 @@ pub fn handle_server_message(
         // 6003: 实体死亡
         6003 => {
             if let Some(death) = crate::codec::decode_entity_death(payload) {
-                info!(
-                    "实体 {} ({}) 被击杀",
-                    death.entity_id, death.mob_name
-                );
+                combat_log.push(format!("击杀 {} (+{}经验)", death.mob_name, death.exp));
                 entities.entities.remove(&death.entity_id);
+                for drop in &death.drops {
+                    drops.drops.insert(
+                        drop.drop_id,
+                        DropItem {
+                            drop_id: drop.drop_id,
+                            item_id: drop.item_id,
+                            count: drop.count,
+                            x: drop.x,
+                            y: drop.y,
+                        },
+                    );
+                }
             }
         }
 
-        // 8001: 玩家位置更新 (自己)
+        // 8001: 玩家位置更新 (自己或其他玩家)
         8001 => {
             if let Some(pos) = crate::codec::decode_player_position(payload) {
                 if pos.uid == player.uid {
@@ -158,7 +224,6 @@ pub fn handle_server_message(
         // 8002: 玩家进入视野
         8002 => {
             if let Some(enter) = crate::codec::decode_player_enter(payload) {
-                info!("玩家进入: {} (UID={})", enter.name, enter.uid);
                 other_players.players.insert(
                     enter.uid,
                     OtherPlayerInfo {
@@ -174,9 +239,7 @@ pub fn handle_server_message(
         // 8003: 玩家离开
         8003 => {
             if let Some(leave) = crate::codec::decode_player_leave(payload) {
-                if let Some(p) = other_players.players.remove(&leave.uid) {
-                    info!("玩家离开: {}", p.name);
-                }
+                other_players.players.remove(&leave.uid);
             }
         }
 
@@ -240,18 +303,12 @@ pub fn handle_server_message(
                         },
                     );
                 }
-                info!(
-                    "实体列表: {} NPC, {} 怪物",
-                    list.npcs.len(),
-                    list.mobs.len()
-                );
             }
         }
 
         // 9100: 配置数据 (JSON)
         9100 => {
             if let Ok(v) = serde_json::from_slice::<serde_json::Value>(payload) {
-                debug!("收到配置数据");
                 if let Some(items) = v.get("items").and_then(|x| x.as_array()) {
                     game_config.items = items.clone();
                 }
@@ -259,30 +316,87 @@ pub fn handle_server_message(
                     game_config.quests = quests.clone();
                 }
                 game_config.loaded = true;
+                info!("配置加载完成: {} 物品, {} 任务", game_config.items.len(), game_config.quests.len());
             }
         }
 
         _ => {
-            // 未处理的消息 ID
             debug!("未处理的消息 ID: {}", msg_id);
         }
     }
 }
 
+/// 解析 NPC 对话选项 JSON
+///
+/// 格式: [{"label":"接受任务","questId":1,"type":"accept"}, ...]
+fn parse_dialog_options(options_json: &str, _npc_id: u32) -> Vec<NpcDialogOption> {
+    if options_json.is_empty() {
+        return vec![NpcDialogOption {
+            label: "关闭".to_string(),
+            action: DialogAction::Close,
+        }];
+    }
+    let arr: Vec<serde_json::Value> = match serde_json::from_str(options_json) {
+        Ok(a) => a,
+        Err(_) => {
+            return vec![NpcDialogOption {
+                label: "关闭".to_string(),
+                action: DialogAction::Close,
+            }]
+        }
+    };
+    let mut options = Vec::new();
+    for item in arr {
+        let label = item
+            .get("label")
+            .and_then(|v| v.as_str())
+            .unwrap_or("关闭")
+            .to_string();
+        let typ = item
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("close");
+        let quest_id = item
+            .get("questId")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+        let action = match typ {
+            "accept" => DialogAction::AcceptQuest(quest_id),
+            "complete" => DialogAction::CompleteQuest(quest_id),
+            "shop" => DialogAction::OpenShop,
+            "close" => DialogAction::Close,
+            _ => DialogAction::None,
+        };
+        options.push(NpcDialogOption { label, action });
+    }
+    if options.is_empty() {
+        options.push(NpcDialogOption {
+            label: "关闭".to_string(),
+            action: DialogAction::Close,
+        });
+    }
+    options
+}
+
 // ============================================================================
-// 输入/移动系统
+// 键盘移动系统
 // ============================================================================
 
-/// 移动系统: 处理键盘输入，发送移动消息
+/// 移动系统: WASD 键盘输入，发送移动消息
 ///
-/// WASD 控制方向，100ms 节流避免消息过多
+/// 100ms 节流避免消息过多
 pub fn movement_system(
     keyboard: Res<ButtonInput<KeyCode>>,
     net: Res<NetworkResource>,
     player: Res<PlayerState>,
     mut input: ResMut<InputState>,
+    dialog: Res<NpcDialogState>,
 ) {
     if !player.logged_in || !net.is_connected() {
+        return;
+    }
+    // 对话打开时禁止移动
+    if dialog.dialog.is_some() {
         return;
     }
 
@@ -311,7 +425,6 @@ pub fn movement_system(
         .unwrap_or_default()
         .as_millis() as u64;
 
-    // 100ms 节流
     if now - input.last_move_time < 100 {
         return;
     }
@@ -340,10 +453,172 @@ pub fn movement_system(
     };
 
     let payload = crate::codec::encode_move(new_x, new_y, dir);
-    net.send(crate::network::NetworkCommand::Send {
+    net.send(NetworkCommand::Send {
         msg_id: 3001,
         payload,
     });
+}
+
+// ============================================================================
+// 鼠标输入系统
+// ============================================================================
+
+/// 鼠标点击: 左键攻击怪物/NPC交互/拾取, 右键移动到点击位置
+pub fn mouse_input_system(
+    mouse: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window>,
+    camera_q: Query<(&Camera, &GlobalTransform)>,
+    net: Res<NetworkResource>,
+    player: Res<PlayerState>,
+    entities: Res<EntityManager>,
+    drops: Res<DropManager>,
+    mut target: ResMut<TargetEntity>,
+    mut input: ResMut<InputState>,
+    dialog: Res<NpcDialogState>,
+) {
+    if !player.logged_in || !net.is_connected() {
+        return;
+    }
+    // 对话打开时禁止点击攻击
+    if dialog.dialog.is_some() {
+        return;
+    }
+
+    if !mouse.just_pressed(MouseButton::Left) {
+        return;
+    }
+
+    let window = if let Ok(w) = windows.get_single() {
+        w
+    } else {
+        return;
+    };
+    let (camera, camera_transform) = if let Ok(c) = camera_q.get_single() {
+        c
+    } else {
+        return;
+    };
+
+    let Some(cursor_pos) = window.cursor_position() else {
+        return;
+    };
+    let Some(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) else {
+        return;
+    };
+    // world_pos 是 Bevy 坐标 (y 已翻转)，转回游戏坐标
+    let game_x = world_pos.x;
+    let game_y = -world_pos.y;
+
+    // 查找最近的实体 (优先级: 怪物 > NPC > 掉落物), 范围 30px
+    let mut best_ent: Option<(u64, f32, bool)> = None; // (id, dist, is_mob)
+    for (eid, info) in &entities.entities {
+        let dx = info.x - game_x;
+        let dy = info.y - game_y;
+        let dist = (dx * dx + dy * dy).sqrt();
+        if dist < 30.0 {
+            let is_mob = !info.is_npc();
+            if best_ent.is_none()
+                || (is_mob && !best_ent.unwrap().2)
+                || dist < best_ent.unwrap().1
+            {
+                best_ent = Some((*eid, dist, is_mob));
+            }
+        }
+    }
+
+    // 查找最近的掉落物
+    let mut best_drop: Option<(u64, f32)> = None;
+    for (did, drop) in &drops.drops {
+        let dx = drop.x - game_x;
+        let dy = drop.y - game_y;
+        let dist = (dx * dx + dy * dy).sqrt();
+        if dist < 25.0 && (best_drop.is_none() || dist < best_drop.unwrap().1) {
+            best_drop = Some((*did, dist));
+        }
+    }
+
+    // 优先攻击怪物, 其次 NPC 交互, 最后拾取
+    if let Some((eid, _, is_mob)) = best_ent {
+        if is_mob {
+            // 攻击怪物 — 节流 300ms
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            if now - input.last_attack_time < 300 {
+                return;
+            }
+            input.last_attack_time = now;
+
+            target.entity_id = Some(eid);
+            target.is_mob = true;
+            let payload = crate::codec::encode_attack(eid);
+            net.send(NetworkCommand::Send {
+                msg_id: 1001,
+                payload,
+            });
+        } else {
+            // NPC 交互
+            let payload = crate::codec::encode_npc_interact(eid as u32);
+            net.send(NetworkCommand::Send {
+                msg_id: 1007,
+                payload,
+            });
+        }
+        return;
+    }
+
+    if let Some((did, _)) = best_drop {
+        let payload = crate::codec::encode_pickup(did);
+        net.send(NetworkCommand::Send {
+            msg_id: 1003,
+            payload,
+        });
+        return;
+    }
+
+    // 没有点中实体 — 左键移动到点击位置
+    let dx = game_x - player.x;
+    let dy = game_y - player.y;
+    let dir = if dy < 0.0 {
+        0
+    } else if dx > 0.0 {
+        1
+    } else if dy > 0.0 {
+        2
+    } else {
+        3
+    };
+    let payload = crate::codec::encode_move(game_x, game_y, dir);
+    net.send(NetworkCommand::Send {
+        msg_id: 3001,
+        payload,
+    });
+}
+
+// ============================================================================
+// 面板切换系统
+// ============================================================================
+
+/// 面板切换: I=背包, Q=任务, L=战斗日志
+pub fn panel_toggle_system(
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut panels: ResMut<PanelVisibility>,
+    dialog: Res<NpcDialogState>,
+) {
+    if keyboard.just_pressed(KeyCode::KeyI) {
+        panels.inventory = !panels.inventory;
+    }
+    if keyboard.just_pressed(KeyCode::KeyQ) {
+        panels.quest = !panels.quest;
+    }
+    if keyboard.just_pressed(KeyCode::KeyL) {
+        panels.combat_log = !panels.combat_log;
+    }
+    // ESC 关闭对话
+    if keyboard.just_pressed(KeyCode::Escape) && dialog.dialog.is_some() {
+        // dialog_state 需要在 ui 系统清理
+    }
 }
 
 // ============================================================================
@@ -356,25 +631,29 @@ pub fn movement_system(
 /// - 其他玩家: 蓝色方块
 /// - 怪物: 红色方块
 /// - NPC: 黄色方块
+/// - 选中目标: 白色光环
+/// - 掉落物: 金色小方块
 pub fn render_system(
     player: Res<PlayerState>,
     entities: Res<EntityManager>,
     other_players: Res<OtherPlayerManager>,
+    drops: Res<DropManager>,
+    target: Res<TargetEntity>,
     mut commands: Commands,
     player_query: Query<Entity, With<Player>>,
     entity_query: Query<(Entity, &GameEntity)>,
     other_query: Query<(Entity, &OtherPlayer)>,
+    drop_query: Query<(Entity, &DroppedItem)>,
+    ring_query: Query<Entity, With<SelectionRing>>,
 ) {
     // --- 玩家自身 ---
     if let Some(player_entity) = player_query.iter().next() {
-        // 更新位置
         commands.entity(player_entity).insert(Transform::from_xyz(
             player.x,
             -player.y,
             10.0,
         ));
     } else if player.logged_in {
-        // 首次创建玩家实体 (绿色方块)
         commands.spawn((
             SpriteBundle {
                 sprite: Sprite {
@@ -392,13 +671,11 @@ pub fn render_system(
     }
 
     // --- 其他玩家 ---
-    // 移除已离开的玩家
     for (entity, other) in other_query.iter() {
         if !other_players.players.contains_key(&other.uid) {
             commands.entity(entity).despawn();
         }
     }
-    // 更新或创建
     for (uid, info) in &other_players.players {
         let mut found = false;
         for (entity, other) in other_query.iter() {
@@ -413,7 +690,6 @@ pub fn render_system(
             }
         }
         if !found {
-            // 蓝色方块
             commands.spawn((
                 SpriteBundle {
                     sprite: Sprite {
@@ -434,22 +710,16 @@ pub fn render_system(
     }
 
     // --- 游戏实体 (怪物/NPC) ---
-    // 移除已不存在的实体
     for (entity, game_ent) in entity_query.iter() {
         if !entities.entities.contains_key(&game_ent.entity_id) {
             commands.entity(entity).despawn();
         }
     }
-    // 更新或创建
     for (eid, info) in &entities.entities {
         let mut found = false;
         for (entity, game_ent) in entity_query.iter() {
             if game_ent.entity_id == *eid {
-                commands.entity(entity).insert(Transform::from_xyz(
-                    info.x,
-                    -info.y,
-                    5.0,
-                ));
+                commands.entity(entity).insert(Transform::from_xyz(info.x, -info.y, 5.0));
                 commands.entity(entity).insert(HealthBar::new(info.hp, info.max_hp));
                 found = true;
                 break;
@@ -487,6 +757,68 @@ pub fn render_system(
             ));
         }
     }
+
+    // --- 掉落物 ---
+    for (entity, drop) in drop_query.iter() {
+        if !drops.drops.contains_key(&drop.drop_id) {
+            commands.entity(entity).despawn();
+        }
+    }
+    for (did, drop) in &drops.drops {
+        let mut found = false;
+        for (entity, drop_comp) in drop_query.iter() {
+            if drop_comp.drop_id == *did {
+                commands.entity(entity).insert(Transform::from_xyz(drop.x, -drop.y, 3.0));
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            commands.spawn((
+                SpriteBundle {
+                    sprite: Sprite {
+                        color: Color::srgb(0.9, 0.7, 0.0),
+                        custom_size: Some(Vec2::new(12.0, 12.0)),
+                        ..default()
+                    },
+                    transform: Transform::from_xyz(drop.x, -drop.y, 3.0),
+                    ..default()
+                },
+                DroppedItem {
+                    drop_id: drop.drop_id,
+                    item_id: drop.item_id,
+                    count: drop.count,
+                },
+            ));
+        }
+    }
+
+    // --- 选中目标光环 ---
+    // 移除旧光环
+    for entity in ring_query.iter() {
+        commands.entity(entity).despawn();
+    }
+    // 创建新光环
+    if let Some(target_id) = target.entity_id {
+        if target.is_mob {
+            if let Some(info) = entities.entities.get(&target_id) {
+                commands.spawn((
+                    SpriteBundle {
+                        sprite: Sprite {
+                            color: Color::srgb(1.0, 1.0, 1.0),
+                            custom_size: Some(Vec2::new(36.0, 36.0)),
+                            ..default()
+                        },
+                        transform: Transform::from_xyz(info.x, -info.y, 4.0),
+                        ..default()
+                    },
+                    SelectionRing {
+                        entity_id: target_id,
+                    },
+                ));
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -502,7 +834,35 @@ pub fn camera_follow_system(
         return;
     }
     for mut transform in camera_query.iter_mut() {
-        transform.translation.x = player.x;
-        transform.translation.y = -player.y;
+        // 平滑跟随
+        transform.translation.x = transform.translation.x.lerp(player.x, 0.15);
+        transform.translation.y = transform.translation.y.lerp(-player.y, 0.15);
+    }
+}
+
+// ============================================================================
+// 定时查询系统
+// ============================================================================
+
+/// 定时查询实体列表 (触发 mob AI tick + 获取最新实体位置)
+///
+/// 每 500ms 发送一次 4002 查询
+pub fn entity_query_timer(
+    time: Res<Time>,
+    net: Res<NetworkResource>,
+    player: Res<PlayerState>,
+    mut timer: Local<Option<Timer>>,
+) {
+    if !player.logged_in || !net.is_connected() {
+        return;
+    }
+    let timer = timer.get_or_insert_with(|| Timer::from_seconds(0.5, TimerMode::Repeating));
+    timer.tick(time.delta());
+    if timer.just_finished() {
+        let payload = crate::codec::encode_query_entities();
+        net.send(NetworkCommand::Send {
+            msg_id: 4002,
+            payload,
+        });
     }
 }
