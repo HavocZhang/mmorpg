@@ -1,0 +1,48 @@
+[package]
+name = "bevy-client"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# Bevy 游戏引擎 (禁用 audio 避免不必要依赖)
+bevy = { version = "0.14", default-features = false, features = [
+    "bevy_core_pipeline",
+    "bevy_sprite",
+    "bevy_text",
+    "bevy_ui",
+    "bevy_render",
+    "bevy_asset",
+    "bevy_winit",
+    "multi_threaded",
+    "default_font",
+    "png",
+    "x11",
+    "wayland",
+] }
+
+# 网络通信 (TCP 直连, 不再依赖 WebSocket)
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "io-util", "time", "net"] }
+crossbeam-channel = "0.5"
+
+# 复用 proto 模块
+rust-mmo-gate = { path = ".." }
+prost = "0.13"
+
+# 加密
+aes-gcm = "0.10"
+crc32fast = "1.4"
+hex = "0.4"
+
+# 序列化
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# 工具
+anyhow = "1.0"
+rand = "0.8"
+
+[profile.dev]
+opt-level = 1
+debug = true
+incremental = true
