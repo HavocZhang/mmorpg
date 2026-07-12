@@ -1,0 +1,7 @@
+[
+  {"id": 1, "name": "清除史莱姆", "desc": "消灭5只史莱姆", "target_mob": 1, "target_count": 5, "exp_reward": 100, "item_reward": 6},
+  {"id": 2, "name": "哥布林威胁", "desc": "消灭3只哥布林", "target_mob": 2, "target_count": 3, "exp_reward": 200, "item_reward": 7},
+  {"id": 3, "name": "骷髅清剿", "desc": "消灭2只骷髅战士", "target_mob": 3, "target_count": 2, "exp_reward": 350, "item_reward": 1},
+  {"id": 4, "name": "暗影威胁", "desc": "消灭1只暗影法师", "target_mob": 4, "target_count": 1, "exp_reward": 500, "item_reward": 2},
+  {"id": 5, "name": "巨人杀手", "desc": "消灭1只岩石巨人", "target_mob": 5, "target_count": 1, "exp_reward": 1000, "item_reward": 4}
+]

@@ -1,0 +1,6 @@
+[
+  {"id": 1, "name": "新手村", "bounds": [0.0, 0.0, 1600.0, 1200.0], "bg_color": "#0d0d20", "mob_types": [1, 2], "portal_npc_ids": [6, 7, 8]},
+  {"id": 2, "name": "幽暗森林", "bounds": [0.0, 0.0, 1600.0, 1200.0], "bg_color": "#0d1a0d", "mob_types": [2, 3, 4], "portal_npc_ids": [9]},
+  {"id": 3, "name": "烈日沙漠", "bounds": [0.0, 0.0, 1600.0, 1200.0], "bg_color": "#1a1505", "mob_types": [3, 4, 5], "portal_npc_ids": [10]},
+  {"id": 4, "name": "古老地下城", "bounds": [0.0, 0.0, 1600.0, 1200.0], "bg_color": "#0a0a0a", "mob_types": [4, 5], "portal_npc_ids": [11]}
+]

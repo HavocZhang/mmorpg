@@ -15,6 +15,8 @@ fn test_player_stats_roundtrip() {
         level: 5, exp: 200, max_exp: 500,
         x: 400.0, y: 300.0, atk: 20, def: 10,
         gold: 1000, class_id: 1, talent_points: 3,
+        class_icon: "⚔".to_string(),
+        talents: vec![1, 2, 3],
     };
     let buf = original.encode_to_vec();
     let decoded = PlayerStats::decode(&buf[..]).unwrap();
@@ -22,6 +24,8 @@ fn test_player_stats_roundtrip() {
     assert_eq!(decoded.name, "测试玩家");
     assert_eq!(decoded.hp, 100);
     assert_eq!(decoded.x, 400.0);
+    assert_eq!(decoded.class_icon, "⚔");
+    assert_eq!(decoded.talents, vec![1, 2, 3]);
 }
 
 #[test]
@@ -61,7 +65,12 @@ fn test_entity_list_with_multiple_entries() {
 
 #[test]
 fn test_game_message_wrapper() {
-    let stats = PlayerStats { uid: 1, name: "t".to_string(), hp: 100, max_hp: 100, mp: 50, max_mp: 50, level: 1, exp: 0, max_exp: 100, x: 0.0, y: 0.0, atk: 10, def: 5, gold: 0, class_id: 0, talent_points: 0 };
+    let stats = PlayerStats {
+        uid: 1, name: "t".to_string(), hp: 100, max_hp: 100, mp: 50, max_mp: 50,
+        level: 1, exp: 0, max_exp: 100, x: 0.0, y: 0.0, atk: 10, def: 5,
+        gold: 0, class_id: 0, talent_points: 0,
+        class_icon: String::new(), talents: Vec::new(),
+    };
     let wrapper = GameMessage {
         msg_id: 5001,
         direction: 2, // DOWNSTREAM

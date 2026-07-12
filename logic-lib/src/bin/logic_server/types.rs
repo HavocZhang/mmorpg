@@ -4,6 +4,7 @@
 
 use super::constants::*;
 use super::utils::*;
+use logic_lib::game_proto as gp;
 use serde_json::Value;
 
 // ── 公会 (v0.6) ──
@@ -156,6 +157,85 @@ impl PlayerState {
             "talents": self.talents.clone(),
         })
         .to_string()
+    }
+
+    /// 构造 proto 版 PlayerStats（完整字段，用于 5001 下行）
+    pub fn to_player_stats(&self) -> gp::PlayerStats {
+        gp::PlayerStats {
+            uid: self.uid,
+            name: self.name.clone(),
+            hp: self.hp,
+            max_hp: self.max_hp,
+            mp: self.mp,
+            max_mp: self.max_mp,
+            level: self.level,
+            exp: self.exp,
+            max_exp: exp_for_level(self.level),
+            x: self.x,
+            y: self.y,
+            atk: self.total_atk(),
+            def: self.total_def(),
+            gold: self.gold,
+            class_id: self.class as u32,
+            talent_points: self.talent_pts,
+            class_icon: CLASS_DEFS
+                .iter()
+                .find(|c| c.id == self.class)
+                .map(|c| c.icon.to_string())
+                .unwrap_or_default(),
+            talents: self.talents.clone(),
+        }
+    }
+
+    /// 构造 proto 版 EquipmentUpdate（用于 5004 下行，空槽用 empty=true 表示）
+    pub fn to_equipment_proto(&self) -> gp::EquipmentUpdate {
+        fn slot(id_opt: Option<u32>, enhance: u32) -> gp::EquipmentSlot {
+            match id_opt {
+                Some(id) => {
+                    let def = get_item_def(id);
+                    gp::EquipmentSlot {
+                        item_id: id,
+                        name: def.map(|d| d.name.to_string()).unwrap_or_default(),
+                        icon: def.map(|d| d.icon.to_string()).unwrap_or_default(),
+                        enhance_level: enhance,
+                        empty: false,
+                    }
+                }
+                None => gp::EquipmentSlot {
+                    item_id: 0,
+                    name: String::new(),
+                    icon: String::new(),
+                    enhance_level: 0,
+                    empty: true,
+                },
+            }
+        }
+        gp::EquipmentUpdate {
+            weapon: Some(slot(self.weapon, self.weapon_enhance)),
+            armor: Some(slot(self.armor, self.armor_enhance)),
+            accessory: Some(slot(self.accessory, self.accessory_enhance)),
+        }
+    }
+
+    /// 构造 proto 版 QuestUpdate（用于 5005 下行）
+    pub fn to_quests_proto(&self) -> gp::QuestUpdate {
+        let quests: Vec<gp::QuestEntry> = self
+            .quests
+            .iter()
+            .map(|(qid, progress)| {
+                let def = get_quest_def(*qid);
+                let target = def.map(|d| d.target_count).unwrap_or(0);
+                gp::QuestEntry {
+                    quest_id: *qid,
+                    name: def.map(|d| d.name.to_string()).unwrap_or_default(),
+                    progress: *progress,
+                    target,
+                    desc: def.map(|d| d.desc.to_string()).unwrap_or_default(),
+                    completed: def.map(|d| *progress >= d.target_count).unwrap_or(false),
+                }
+            })
+            .collect();
+        gp::QuestUpdate { quests }
     }
 
     pub fn to_enter_json(&self) -> String {
@@ -328,6 +408,7 @@ pub struct MobEntity {
     pub atk: i32,
     pub def: i32,
     pub level: u32,
+    #[allow(dead_code)]
     pub exp: u32,
     pub state: MobState,
     pub target_uid: Option<u64>,

@@ -1,0 +1,10 @@
+[
+  {"item_id": 6, "price": 50, "sell_price": 35, "stock": null},
+  {"item_id": 7, "price": 50, "sell_price": 35, "stock": null},
+  {"item_id": 8, "price": 150, "sell_price": 100, "stock": 5},
+  {"item_id": 1, "price": 100, "sell_price": 70, "stock": null},
+  {"item_id": 2, "price": 300, "sell_price": 200, "stock": 3},
+  {"item_id": 3, "price": 150, "sell_price": 100, "stock": null},
+  {"item_id": 4, "price": 400, "sell_price": 280, "stock": 3},
+  {"item_id": 5, "price": 200, "sell_price": 140, "stock": 5}
+]

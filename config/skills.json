@@ -1,0 +1,7 @@
+[
+  {"id": 1, "name": "普通攻击", "dmg_multiplier": 1.0, "mp_cost": 0, "cooldown_ms": 800, "range": 80.0, "icon": "⚔"},
+  {"id": 2, "name": "重击", "dmg_multiplier": 2.0, "mp_cost": 10, "cooldown_ms": 2000, "range": 80.0, "icon": "💥"},
+  {"id": 3, "name": "火球术", "dmg_multiplier": 3.0, "mp_cost": 20, "cooldown_ms": 3000, "range": 200.0, "icon": "🔥"},
+  {"id": 4, "name": "冰冻", "dmg_multiplier": 1.5, "mp_cost": 15, "cooldown_ms": 4000, "range": 150.0, "icon": "❄"},
+  {"id": 5, "name": "治疗术", "dmg_multiplier": 0.0, "mp_cost": 25, "cooldown_ms": 5000, "range": 0.0, "icon": "💚"}
+]

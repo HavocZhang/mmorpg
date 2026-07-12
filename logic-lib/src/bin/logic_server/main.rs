@@ -13,6 +13,7 @@
 //! 消息协议约定:
 //!   上行 (Client -> Gateway -> LogicServer):
 //!     100:  初始化/请求玩家列表
+//!     101:  请求配置数据 (v0.8) — 下发 9100
 //!     1001: 基础攻击        {"targetUid":12345}
 //!     1002: 技能攻击        {"skillId":1,"targetUid":12345}
 //!     1003: 拾取物品        {"itemId":1}
@@ -44,13 +45,20 @@
 //!     8004: 实体位置更新    {"entityId","x","y","dir"}
 //!     9001: 玩家列表
 //!     9002: 实体列表        {"npcs":[...],"mobs":[...]}
+//!     9100: 配置数据 (v0.8) {skills,mobs,items,quests,classes,talents,npcs,maps,shopItems}
 
 mod constants;
 mod types;
 mod utils;
 mod state;
 mod handlers;
+mod combat;
+mod inventory;
+mod quest;
+mod world;
+mod event_bus;
 mod codec;
+pub mod config_loader;
 #[cfg(test)]
 mod tests;
 
@@ -166,7 +174,7 @@ impl LogicService for MockLogicService {
         let mut messages = Vec::new();
 
         // 1. 给自己发玩家属性 (5001)
-        messages.push(dm(uid, 5001, player.to_stats_json(), 1));
+        messages.push(codec::dm_proto(uid, 5001, &player.to_player_stats(), 1));
 
         // 2. 广播玩家进入通知 (8002)
         messages.push(dm(0, 8002, player.to_enter_json(), 1));
@@ -191,14 +199,14 @@ impl LogicService for MockLogicService {
         messages.push(dm(uid, 5003, player.to_inventory_json(), 1));
 
         // 6. 给自己发装备 (5004)
-        messages.push(dm(uid, 5004, player.to_equipment_json(), 1));
+        messages.push(codec::dm_proto(uid, 5004, &player.to_equipment_proto(), 1));
 
         // 7. 技能数据 (通过 5004 下发，不再占用 5500 避免与升级消息冲突)
         // 5004 上行是装备，下行复用为技能列表
         // messages.push(dm(uid, 5004, player.to_skills_json(), 1));
 
         // 8. 给自己发任务列表 (5005)
-        messages.push(dm(uid, 5005, player.to_quests_json(), 1));
+        messages.push(codec::dm_proto(uid, 5005, &player.to_quests_proto(), 1));
 
         // 9. 给自己发NPC和怪物列表 (9002)
         let npcs_json: Vec<String> = self.state.npcs.iter().map(|n| n.to_json()).collect();
@@ -310,6 +318,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         skills = SKILLS.len(),
         "Mock MMORPG 逻辑服 (完整版) 启动中"
     );
+
+    // 预加载配置（从 config/ 目录读取 JSON，缺失则用 const fallback）
+    let _ = config_loader::get_config();
 
     let mut service = MockLogicService::default();
 

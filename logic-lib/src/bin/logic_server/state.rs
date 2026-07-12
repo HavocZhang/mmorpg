@@ -3,6 +3,7 @@
 // ════════════════════════════════════════════════════════════════
 
 use super::constants::*;
+use super::event_bus;
 use super::types::*;
 use super::utils::*;
 use dashmap::DashMap;
@@ -23,6 +24,8 @@ pub struct GameState {
     pub player_guild: DashMap<u64, String>, // uid → guild_name
     // v0.6: PvP 决斗
     pub duel_requests: DashMap<u64, u64>, // challenger_uid → target_uid
+    // 事件总线：解耦杀怪/任务/掉落/经验等业务逻辑
+    pub event_bus: event_bus::EventBus,
 }
 
 pub struct MockLogicService {
@@ -45,6 +48,7 @@ impl Default for MockLogicService {
             guilds: DashMap::new(),
             player_guild: DashMap::new(),
             duel_requests: DashMap::new(),
+            event_bus: event_bus::EventBus::with_default_handlers(),
         };
 
         // Spawn 初始怪物
@@ -96,6 +100,7 @@ impl GameState {
             guilds: DashMap::new(),
             player_guild: DashMap::new(),
             duel_requests: DashMap::new(),
+            event_bus: event_bus::EventBus::with_default_handlers(),
         }
     }
 }

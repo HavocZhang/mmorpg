@@ -100,11 +100,11 @@ let ents={},inv=[],eq={},qst=[],sel=0,keys={},vx=0,vy=0,parties={},cd={},drops={
 let npcQuests={}; // NPC -> quest ID list from 9002
 const IC={1:'🟢',2:'🔵',3:'💀',4:'🟣',5:'🟤'};
 
-// 物品数据层 (与 logic_server ItemDef 同步)
+// 物品数据层 (本地 fallback，登录后由 9100 配置消息覆盖)
 const IT={1:{n:'铁剑',t:'weapon',i:'🗡',atk:15,def:0,hp:0,mp:0,g:100},2:{n:'钢剑',t:'weapon',i:'⚔',atk:30,def:0,hp:0,mp:0,g:300},3:{n:'皮甲',t:'armor',i:'🛡',atk:0,def:10,hp:0,mp:0,g:150},4:{n:'铁甲',t:'armor',i:'🛡',atk:0,def:25,hp:0,mp:0,g:400},5:{n:'力量戒指',t:'accessory',i:'💍',atk:10,def:5,hp:0,mp:0,g:200},6:{n:'生命药水',t:'potion',i:'🧪',atk:0,def:0,hp:50,mp:0,g:50},7:{n:'法力药水',t:'potion',i:'💧',atk:0,def:0,hp:0,mp:30,g:50},8:{n:'全恢复药水',t:'potion',i:'💎',atk:0,def:0,hp:100,mp:50,g:150},9:{n:'史莱姆凝胶',t:'material',i:'🟢',atk:0,def:0,hp:0,mp:0,g:10},10:{n:'哥布林耳朵',t:'material',i:'👂',atk:0,def:0,hp:0,mp:0,g:15}};
-// 任务数据层 (与 logic_server QuestDef 同步)
+// 任务数据层 (本地 fallback，登录后由 9100 配置消息覆盖)
 const QD={1:{n:'清除史莱姆',d:'消灭5只史莱姆',mob:1,cnt:5,xp:100,rw:6},2:{n:'哥布林威胁',d:'消灭3只哥布林',mob:2,cnt:3,xp:200,rw:7},3:{n:'骷髅清剿',d:'消灭2只骷髅战士',mob:3,cnt:2,xp:350,rw:1},4:{n:'暗影威胁',d:'消灭1只暗影法师',mob:4,cnt:1,xp:500,rw:2},5:{n:'巨人杀手',d:'消灭1只岩石巨人',mob:5,cnt:1,xp:1000,rw:4}};
-// 职业与天赋数据 (与 logic_server 同步)
+// 职业与天赋数据 (本地 fallback，登录后由 9100 配置消息覆盖)
 const CLASSES={1:{n:'战士',icon:'⚔',atk:5,def:10,hp:50},2:{n:'法师',icon:'🔮',atk:15,def:2,hp:-20},3:{n:'弓手',icon:'🏹',atk:10,def:5,hp:0}};
 const TALENTS=[{id:1,name:'剑术精通',class:1,atk:5,def:0,hp:0,icon:'⚔'},{id:2,name:'铁壁',class:1,atk:0,def:5,hp:0,icon:'🛡'},{id:3,name:'坚韧',class:1,atk:0,def:0,hp:30,icon:'❤'},{id:4,name:'法术强化',class:2,atk:8,def:0,hp:0,icon:'💥'},{id:5,name:'魔力护盾',class:2,atk:0,def:3,hp:0,icon:'🔮'},{id:6,name:'法力潮汐',class:2,atk:0,def:0,hp:20,icon:'✨'},{id:7,name:'精准射击',class:3,atk:6,def:0,hp:0,icon:'🎯'},{id:8,name:'闪避步法',class:3,atk:0,def:4,hp:0,icon:'💨'},{id:9,name:'猎人直觉',class:3,atk:0,def:0,hp:25,icon:'👁'}];
 function GI(id){return IT[id]||{n:'物品'+id,i:'📦',t:'unknown',atk:0,def:0,hp:0,mp:0,g:0}}
@@ -244,7 +244,7 @@ case 5001:{
   const oldAtk=me.atk,oldDef=me.def,oldGold=me.gold;
   me.hp=b.hp??me.hp;me.mh=b.maxHp??me.mh;me.mp=b.mp??me.mp;me.mm=b.maxMp??me.mm;
   if(b.gold!==undefined){me.gold=b.gold;if(b.gold!==oldGold)flashStat('gd',b.gold>oldGold)}
-  if(b.class!==undefined)me.class=b.class;if(b.classIcon!==undefined)me.classIcon=b.classIcon;if(b.talentPts!==undefined)me.talentPts=b.talentPts;if(b.talents!==undefined)me.talents=b.talents;
+  if(b.classId!==undefined)me.class=b.classId;if(b.classIcon!==undefined)me.classIcon=b.classIcon;if(b.talentPoints!==undefined)me.talentPts=b.talentPoints;if(b.talents!==undefined)me.talents=b.talents;
   // v0.6: 传送
   if(b.transported){me.mapId=b.mapId||1;S('📍 '+b.mapName);L('📍','传送到 '+b.mapName);}
   if(b.bgColor)document.getElementById('wrap').style.background=b.bgColor;
@@ -255,7 +255,7 @@ case 5001:{
   if(b.healed){fxHeal(cv.width/2,cv.height/2)}
   R();break;
 }
-case 5002:if(b.gained!=null){if(b.exp!=null)me.xp=b.exp;if(b.level&&b.level>me.lvl){me.lvl=b.level;L('⭐','升到 '+me.lvl+'级!')}R()}else if(b.mp!=null){me.mp=b.mp;me.mm=b.maxMp||me.mm;R()}break;
+case 5002:if(b.isMpUpdate){me.mp=b.mp;me.mm=b.maxMp||me.mm;R()}else if(b.gained!=null){if(b.exp!=null)me.xp=b.exp;if(b.level&&b.level>me.lvl){me.lvl=b.level;L('⭐','升到 '+b.level+'级!')}R()}else if(b.mp!=null){me.mp=b.mp;me.mm=b.maxMp||me.mm;R()}break;
 case 5003:inv=b.items||[];R();break;
 case 5004:eq=b;R();break;
 case 5005:qst=b.quests||[];R();break;
@@ -330,6 +330,15 @@ case 8002:if(b.uid!==uid){ents[b.uid]={t:'player',name:b.name||'P'+b.uid,x:b.x||
 case 8003:if(b.uid&&ents[b.uid]){L('📤',ents[b.uid].name+' 离开');delete ents[b.uid]}break;
 case 8004:if(b.entityId){if(!ents[b.entityId]){ents[b.entityId]={t:'mob',name:b.name||('Mob'+b.entityId),x:b.x,y:b.y,tx:b.x,ty:b.y,hp:b.hp,mh:b.maxHp,level:b.level||1,icon:IC[b.defId]||'👹'}}ents[b.entityId].tx=b.x;ents[b.entityId].ty=b.y;ents[b.entityId].hp=b.hp;ents[b.entityId].mh=b.maxHp}break;
 case 9001:(b.players||[]).forEach(p=>{if(p.uid!==uid)ents[p.uid]={t:'player',name:p.name||'P'+p.uid,x:p.x||400,y:p.y||300,tx:p.x||400,ty:p.y||300,hp:100,mh:100}});break;
+case 9100:{
+  // v0.8: 应用服务端下发的配置数据，覆盖本地 IT/QD/CLASSES/TALENTS fallback
+  if(b.items)b.items.forEach(c=>{IT[c.id]={n:c.name,t:c.item_type,i:c.icon,atk:c.atk_bonus||0,def:c.def_bonus||0,hp:c.hp_restore||0,mp:c.mp_restore||0,g:c.value||0}});
+  if(b.quests)b.quests.forEach(q=>{QD[q.id]={n:q.name,d:q.desc,mob:q.target_mob,cnt:q.target_count,xp:q.exp_reward,rw:q.item_reward}});
+  if(b.classes)b.classes.forEach(c=>{CLASSES[c.id]={n:c.name,icon:c.icon,atk:c.atk_bonus,def:c.def_bonus,hp:c.hp_bonus}});
+  if(b.talents)b.talents.forEach(t=>{TALENTS[t.id-1]={id:t.id,name:t.name,class:t.class,atk:t.atk,def:t.def,hp:t.hp,icon:t.icon}});
+  L('⚙','配置已加载: '+(b.items?b.items.length:0)+' 物品, '+(b.quests?b.quests.length:0)+' 任务, '+(b.talents?b.talents.length:0)+' 天赋');
+  R();break;
+}
 }}function L(w,t){const c=document.getElementById('chat');c.innerHTML+=`<div><b style="color:#3498db">${w}</b>: ${t}</div>`;c.scrollTop=c.scrollHeight}
 
 // ====== HUD ======
@@ -552,6 +561,8 @@ async function doLogin(){
     S('初始化协议...');
     try{await ProtoSDK.init()}catch(e){console.warn('ProtoSDK init failed, fallback to JSON:',e)}
     S('连接...');await go(u);
+    // v0.8: 从服务端拉取配置数据 (9100)，覆盖本地 IT/QD/CLASSES/TALENTS fallback
+    sd(101,{});
     await new Promise(r=>setTimeout(r,2500));
     document.getElementById('login').style.display='none';
     S('就绪');dr();

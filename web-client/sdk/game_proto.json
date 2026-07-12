@@ -237,6 +237,10 @@
               "type": "uint32",
               "id": 4,
               "protoName": "enhance_level"
+            },
+            "empty": {
+              "type": "bool",
+              "id": 5
             }
           }
         },
@@ -258,6 +262,14 @@
             "target": {
               "type": "uint32",
               "id": 4
+            },
+            "desc": {
+              "type": "string",
+              "id": 5
+            },
+            "completed": {
+              "type": "bool",
+              "id": 6
             }
           }
         },
@@ -430,6 +442,16 @@
               "type": "uint32",
               "id": 16,
               "protoName": "talent_points"
+            },
+            "classIcon": {
+              "type": "string",
+              "id": 17,
+              "protoName": "class_icon"
+            },
+            "talents": {
+              "rule": "repeated",
+              "type": "uint32",
+              "id": 18
             }
           }
         },
@@ -451,6 +473,20 @@
             "gained": {
               "type": "uint32",
               "id": 4
+            },
+            "mp": {
+              "type": "int32",
+              "id": 5
+            },
+            "maxMp": {
+              "type": "int32",
+              "id": 6,
+              "protoName": "max_mp"
+            },
+            "isMpUpdate": {
+              "type": "bool",
+              "id": 7,
+              "protoName": "is_mp_update"
             }
           }
         },
@@ -552,6 +588,29 @@
               "type": "uint32",
               "id": 9,
               "protoName": "cooldown_left"
+            },
+            "targetName": {
+              "type": "string",
+              "id": 10,
+              "protoName": "target_name"
+            },
+            "skillId": {
+              "type": "uint32",
+              "id": 11,
+              "protoName": "skill_id"
+            },
+            "reason": {
+              "type": "string",
+              "id": 12
+            },
+            "swing": {
+              "type": "bool",
+              "id": 13
+            },
+            "attackerUid": {
+              "type": "uint64",
+              "id": 14,
+              "protoName": "attacker_uid"
             }
           }
         },

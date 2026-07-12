@@ -557,8 +557,18 @@ fn test_enhance_weapon_success() {
     }
     // 强化 +1，费用 1*100=100
     let r = state.handle_enhance(1, "weapon");
-    let success = r.iter().any(|m| m.msg_id == 5004 && String::from_utf8_lossy(&m.payload).contains("enhanceLevel"));
-    assert!(success, "强化+1应成功(100%概率)并返回5004");
+    // 5004 现已迁移为 proto：解码 EquipmentUpdate，验证 weapon.enhance_level >= 1
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+    let success = r.iter().any(|m| {
+        if m.msg_id != 5004 { return false; }
+        if let Ok(eu) = gp::EquipmentUpdate::decode(&m.payload[..]) {
+            eu.weapon.as_ref().map(|s| s.enhance_level >= 1).unwrap_or(false)
+        } else {
+            false
+        }
+    });
+    assert!(success, "强化+1应成功(100%概率)并返回5004(含enhance_level>=1)");
     // atk 应增加: 铁剑基础15, +1级=15*1.1=16.5→16, 增加1
     let atk = state.players.get(&1).map(|p| p.total_atk()).unwrap_or(0);
     // base atk=20 + 强化后武器16 = 36 (原 20+15=35)
@@ -729,6 +739,8 @@ fn test_codec_dm_proto_encodes_correctly() {
         mp: 50, max_mp: 50, level: 5, exp: 200, max_exp: 500,
         x: 400.0, y: 300.0, atk: 20, def: 10, gold: 1000,
         class_id: 1, talent_points: 3,
+        class_icon: "⚔".to_string(),
+        talents: vec![1, 2],
     };
     let msg = super::codec::dm_proto(12345, 5001, &stats, 0);
 
@@ -739,6 +751,8 @@ fn test_codec_dm_proto_encodes_correctly() {
     assert_eq!(decoded.uid, 12345);
     assert_eq!(decoded.name, "测试");
     assert_eq!(decoded.hp, 100);
+    assert_eq!(decoded.class_icon, "⚔");
+    assert_eq!(decoded.talents, vec![1, 2]);
 }
 
 #[test]
@@ -1060,6 +1074,154 @@ fn test_codec_all_json_fallbacks() {
 }
 
 // ────────────────────────────────────────────────────────────
+// TDD/BDD 测试 — 事件总线 (Event Bus)
+// ────────────────────────────────────────────────────────────
+
+/// TDD: 事件总线 — MobKilled 事件触发任务进度更新
+/// Given: 玩家已接受任务1（消灭5只史莱姆），进度为0
+/// When: 发布 MobKilled 事件（mob_def_id=1）
+/// Then: 玩家任务进度变为1，SideEffect 包含 5005 任务更新消息
+#[test]
+fn test_event_bus_mob_killed_triggers_quest_progress() {
+    let state = GameState::test_new();
+    add_test_player(&state, 1, 500.0, 500.0);
+    let _ = state.handle_accept_quest(1, 1);
+
+    let progress_before = state.players.get(&1)
+        .and_then(|p| p.quests.iter().find(|(qid, _)| *qid == 1).map(|(_, c)| *c))
+        .unwrap_or(0);
+    assert_eq!(progress_before, 0, "初始任务进度应为0");
+
+    let event = event_bus::GameEvent::MobKilled {
+        killer_uid: 1,
+        mob_def_id: 1,
+        mob_entity_id: 10000,
+        mob_name: "史莱姆".to_string(),
+        x: 500.0,
+        y: 500.0,
+    };
+    let effect = state.event_bus.publish(&event, &state);
+
+    let progress_after = state.players.get(&1)
+        .and_then(|p| p.quests.iter().find(|(qid, _)| *qid == 1).map(|(_, c)| *c))
+        .unwrap_or(0);
+    assert_eq!(progress_after, 1, "杀怪后任务进度应为1");
+
+    assert!(effect.player_messages.iter().any(|(_, m)| m.msg_id == 5005),
+        "SideEffect 应包含 5005 任务更新消息");
+}
+
+/// TDD: 事件总线 — MobKilled 事件触发掉落物生成
+/// Given: 无掉落物
+/// When: 发布 MobKilled 事件（mob_def_id=1）
+/// Then: drops 表有掉落物，SideEffect 包含 6003 死亡广播消息
+#[test]
+fn test_event_bus_mob_killed_generates_drops() {
+    let state = GameState::test_new();
+    add_test_player(&state, 1, 500.0, 500.0);
+    assert_eq!(state.drops.len(), 0, "初始无掉落物");
+
+    let event = event_bus::GameEvent::MobKilled {
+        killer_uid: 1,
+        mob_def_id: 1,
+        mob_entity_id: 10000,
+        mob_name: "史莱姆".to_string(),
+        x: 500.0,
+        y: 500.0,
+    };
+    let effect = state.event_bus.publish(&event, &state);
+
+    assert!(state.drops.len() > 0, "杀怪后应生成掉落物");
+    assert!(effect.broadcast_messages.iter().any(|m| m.msg_id == 6003),
+        "SideEffect 应包含 6003 死亡广播消息");
+}
+
+/// TDD: 事件总线 — MobKilled 事件触发经验奖励
+/// Given: 玩家初始经验为0
+/// When: 发布 MobKilled 事件（mob_def_id=1，史莱姆 exp=20）
+/// Then: SideEffect 的 exp_rewards 包含 (1, 20)
+#[test]
+fn test_event_bus_mob_killed_grants_exp() {
+    let state = GameState::test_new();
+    add_test_player(&state, 1, 500.0, 500.0);
+
+    let event = event_bus::GameEvent::MobKilled {
+        killer_uid: 1,
+        mob_def_id: 1,
+        mob_entity_id: 10000,
+        mob_name: "史莱姆".to_string(),
+        x: 500.0,
+        y: 500.0,
+    };
+    let effect = state.event_bus.publish(&event, &state);
+
+    assert!(effect.exp_rewards.iter().any(|(uid, exp)| *uid == 1 && *exp == 20),
+        "SideEffect 应包含经验奖励 (uid=1, exp=20)，实际: {:?}", effect.exp_rewards);
+}
+
+/// BDD: 场景 — 玩家击杀怪物时，任务进度通过事件总线更新
+/// Given: 玩家已接受任务1，怪物在附近
+/// When: 玩家攻击怪物至死亡
+/// Then: 任务进度增加，handle_attack 返回的消息包含 5005/6003/5002
+#[test]
+fn test_when_player_kills_mob_quest_progresses_via_event_bus() {
+    let state = GameState::test_new();
+    add_test_player(&state, 1, 500.0, 500.0);
+    add_test_mob(&state, 10000, 1, 540.0, 500.0);
+    let _ = state.handle_accept_quest(1, 1);
+
+    // 高攻击力一击必杀
+    if let Some(mut p) = state.players.get_mut(&1) {
+        p.atk = 9999;
+        p.skill_cooldowns.clear();
+    }
+
+    let progress_before = state.players.get(&1)
+        .and_then(|p| p.quests.iter().find(|(qid, _)| *qid == 1).map(|(_, c)| *c))
+        .unwrap_or(0);
+    assert_eq!(progress_before, 0, "击杀前任务进度应为0");
+
+    let msgs = state.handle_attack(1, 1, 10000);
+
+    let mob_dead = state.mobs.get(&10000).map(|m| m.state == MobState::Dead).unwrap_or(false);
+    assert!(mob_dead, "怪物应被击杀");
+
+    let progress_after = state.players.get(&1)
+        .and_then(|p| p.quests.iter().find(|(qid, _)| *qid == 1).map(|(_, c)| *c))
+        .unwrap_or(0);
+    assert_eq!(progress_after, 1, "击杀后任务进度应为1");
+
+    assert!(msgs.iter().any(|m| m.msg_id == 5005), "应返回 5005 任务更新消息");
+    assert!(msgs.iter().any(|m| m.msg_id == 6003), "应返回 6003 死亡广播");
+    assert!(msgs.iter().any(|m| m.msg_id == 5002), "应返回 5002 经验更新");
+}
+
+/// TDD: 事件总线 — 多个订阅者同时响应同一事件
+/// Given: 默认事件总线（3个订阅者：任务/掉落/经验）
+/// When: 发布 MobKilled 事件
+/// Then: SideEffect 同时包含 exp_rewards、player_messages、broadcast_messages
+#[test]
+fn test_event_bus_multiple_subscribers() {
+    let state = GameState::test_new();
+    add_test_player(&state, 1, 500.0, 500.0);
+    let _ = state.handle_accept_quest(1, 1);
+
+    let event = event_bus::GameEvent::MobKilled {
+        killer_uid: 1,
+        mob_def_id: 1,
+        mob_entity_id: 10000,
+        mob_name: "史莱姆".to_string(),
+        x: 500.0,
+        y: 500.0,
+    };
+    let effect = state.event_bus.publish(&event, &state);
+
+    assert!(!effect.exp_rewards.is_empty(), "经验奖励订阅者应产生 exp_rewards");
+    assert!(!effect.player_messages.is_empty(), "任务进度订阅者应产生 player_messages");
+    assert!(!effect.broadcast_messages.is_empty(), "掉落生成订阅者应产生 broadcast_messages");
+}
+
+// ────────────────────────────────────────────────────────────
 // BDD 行为测试 — proto 路径在 process_message 中端到端验证
 // ────────────────────────────────────────────────────────────
 
@@ -1242,4 +1404,291 @@ fn test_npc_interact_proto_path() {
     // 应返回 5006 NPC 对话
     let has_dialog = resp.messages.iter().any(|m| m.msg_id == 5006);
     assert!(has_dialog, "proto 路径 NPC 交互应返回对话");
+}
+
+// ════════════════════════════════════════════════════════════════
+// 下行消息 Proto 迁移验证 — 第三批 (5001/5002/5004/5005/6001)
+// 验证迁移后的下行消息能被 proto 正确解码且包含扩展字段
+// ════════════════════════════════════════════════════════════════
+
+/// TDD: PlayerStats (5001) 迁移到 proto 后包含 class_icon 和 talents 字段
+/// Given: 玩家已选职业并学习天赋
+/// When: 触发 handle_equip（会发送 5001 proto）
+/// Then: 5001 payload 可被 PlayerStats 解码，且 class_icon 非空、talents 字段存在
+#[test]
+fn test_player_stats_proto_contains_class_icon_and_talents() {
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+
+    let state = GameState::test_new();
+    add_test_player(&state, 70001, 500.0, 500.0);
+    // 设置职业和天赋（warrior=1）
+    if let Some(mut p) = state.players.get_mut(&70001) {
+        p.class = 1; // Warrior
+        p.talents = vec![1, 3];
+        // 给一个可装备的物品（铁剑 item_id=1）
+        p.add_item(1, 1);
+    }
+
+    let resp = state.handle_equip(70001, 1);
+    // 找到 5001 消息并解码
+    let stats_msg = resp.iter().find(|m| m.msg_id == 5001)
+        .expect("handle_equip 应返回 5001");
+    // proto payload 不应以 '{' 开头
+    assert_ne!(stats_msg.payload.first(), Some(&0x7B),
+        "5001 应为 proto 编码而非 JSON");
+    let decoded = gp::PlayerStats::decode(&stats_msg.payload[..])
+        .expect("5001 payload 应可被 PlayerStats 解码");
+    // 验证扩展字段
+    assert!(!decoded.class_icon.is_empty(),
+        "class_icon 应非空 (warrior 应有图标), 实际: {:?}", decoded.class_icon);
+    assert_eq!(decoded.talents, vec![1, 3],
+        "talents 应为 [1, 3]");
+    assert_eq!(decoded.class_id, 1, "class_id 应为 warrior=1");
+    assert_eq!(decoded.talent_points, decoded.talent_points, "talent_points 字段应存在");
+}
+
+/// TDD: ExpUpdate (5002) MP 更新变体 — is_mp_update=true
+/// Given: 玩家攻击怪物消耗 MP
+/// When: 触发 handle_attack（技能攻击会先发 5002 MP 更新）
+/// Then: 5002 payload 解码后 is_mp_update=true, mp/max_mp 非零, exp/gained 为 0
+#[test]
+fn test_exp_update_proto_mp_variant() {
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+
+    let state = GameState::test_new();
+    add_test_player(&state, 70002, 500.0, 500.0);
+    add_test_mob(&state, 10000, 1, 540.0, 500.0); // 在攻击范围内
+
+    let resp = state.handle_attack(70002, 2, 10000); // skill_id=2 重击, mp_cost=10
+    // 找到 5002 消息（技能攻击会先发 MP 更新）
+    let mp_msg = resp.iter().find(|m| m.msg_id == 5002)
+        .expect("技能攻击应返回 5002 MP 更新");
+    assert_ne!(mp_msg.payload.first(), Some(&0x7B),
+        "5002 应为 proto 编码");
+    let decoded = gp::ExpUpdate::decode(&mp_msg.payload[..])
+        .expect("5002 payload 应可被 ExpUpdate 解码");
+    // MP 变体: is_mp_update=true, mp/max_mp 有值, exp 字段为 0
+    assert!(decoded.is_mp_update, "is_mp_update 应为 true (MP 更新变体)");
+    assert!(decoded.mp > 0, "mp 应 > 0 (玩家有 MP), 实际: {}", decoded.mp);
+    assert!(decoded.max_mp > 0, "max_mp 应 > 0, 实际: {}", decoded.max_mp);
+    assert_eq!(decoded.gained, 0, "MP 变体 gained 应为 0");
+    assert_eq!(decoded.exp, 0, "MP 变体 exp 应为 0");
+}
+
+/// TDD: ExpUpdate (5002) 经验变体 — is_mp_update=false
+/// Given: 玩家击杀怪物获得经验
+/// When: 触发 handle_attack 击杀怪物
+/// Then: 5002 payload 解码后 is_mp_update=false, exp/gained 非零, mp 字段为 0
+#[test]
+fn test_exp_update_proto_exp_variant() {
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+
+    let state = GameState::test_new();
+    add_test_player(&state, 70003, 500.0, 500.0);
+    add_test_mob(&state, 10001, 1, 540.0, 500.0);
+    // 设置高攻击力一击必杀
+    if let Some(mut p) = state.players.get_mut(&70003) {
+        p.atk = 9999;
+        p.skill_cooldowns.clear();
+    }
+
+    let resp = state.handle_attack(70003, 1, 10001);
+    // 击杀后应发 5002 经验更新（注意：技能攻击同时会发 MP 更新 5002，
+    // 所以要找到 is_mp_update=false 的那条）
+    let exp_msg = resp.iter()
+        .filter(|m| m.msg_id == 5002)
+        .find_map(|m| {
+            gp::ExpUpdate::decode(&m.payload[..]).ok()
+                .filter(|d| !d.is_mp_update)
+                .map(|d| (m, d))
+        })
+        .expect("击杀怪物应返回 5002 经验更新 (is_mp_update=false)");
+    let (_, decoded) = exp_msg;
+    // 经验变体: is_mp_update=false, exp/gained 有值
+    assert!(!decoded.is_mp_update, "is_mp_update 应为 false (经验变体)");
+    assert!(decoded.gained > 0, "gained 应 > 0 (获得经验), 实际: {}", decoded.gained);
+    assert!(decoded.max_exp > 0, "max_exp 应 > 0, 实际: {}", decoded.max_exp);
+    assert_eq!(decoded.mp, 0, "经验变体 mp 字段应为 0");
+    assert_eq!(decoded.max_mp, 0, "经验变体 max_mp 字段应为 0");
+}
+
+/// TDD: EquipmentUpdate (5004) 空槽位用 empty=true 表示
+/// Given: 玩家只装备武器，armor 和 accessory 为空
+/// When: 触发 handle_equip 装备武器
+/// Then: 5004 payload 解码后 weapon.empty=false, armor.empty=true, accessory.empty=true
+#[test]
+fn test_equipment_update_proto_empty_slots() {
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+
+    let state = GameState::test_new();
+    add_test_player(&state, 70004, 500.0, 500.0);
+    if let Some(mut p) = state.players.get_mut(&70004) {
+        p.add_item(1, 1); // 铁剑
+    }
+
+    let resp = state.handle_equip(70004, 1);
+    let equip_msg = resp.iter().find(|m| m.msg_id == 5004)
+        .expect("handle_equip 应返回 5004");
+    assert_ne!(equip_msg.payload.first(), Some(&0x7B),
+        "5004 应为 proto 编码");
+    let decoded = gp::EquipmentUpdate::decode(&equip_msg.payload[..])
+        .expect("5004 payload 应可被 EquipmentUpdate 解码");
+    // weapon 应非空
+    let weapon = decoded.weapon.as_ref().expect("weapon 槽应存在");
+    assert!(!weapon.empty, "weapon 应非空 (刚装备)");
+    assert_eq!(weapon.item_id, 1, "weapon item_id 应为 1");
+    assert!(!weapon.name.is_empty(), "weapon name 应非空");
+    // armor 和 accessory 应为空
+    let armor = decoded.armor.as_ref().expect("armor 槽应存在");
+    assert!(armor.empty, "armor 应为空 (empty=true)");
+    assert_eq!(armor.item_id, 0, "空槽 item_id 应为 0");
+    let accessory = decoded.accessory.as_ref().expect("accessory 槽应存在");
+    assert!(accessory.empty, "accessory 应为空 (empty=true)");
+}
+
+/// TDD: QuestUpdate (5005) 包含 desc 和 completed 字段
+/// Given: 玩家接受任务1（杀5只史莱姆）
+/// When: 触发 handle_accept_quest
+/// Then: 5005 payload 解码后 QuestEntry 含 desc 非空、completed=false (进度0)
+#[test]
+fn test_quest_update_proto_has_desc_and_completed() {
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+
+    let state = GameState::test_new();
+    add_test_player(&state, 70005, 500.0, 500.0);
+
+    let resp = state.handle_accept_quest(70005, 1);
+    let quest_msg = resp.iter().find(|m| m.msg_id == 5005)
+        .expect("handle_accept_quest 应返回 5005");
+    assert_ne!(quest_msg.payload.first(), Some(&0x7B),
+        "5005 应为 proto 编码");
+    let decoded = gp::QuestUpdate::decode(&quest_msg.payload[..])
+        .expect("5005 payload 应可被 QuestUpdate 解码");
+    assert!(!decoded.quests.is_empty(), "任务列表应非空");
+    let quest = &decoded.quests[0];
+    assert_eq!(quest.quest_id, 1, "quest_id 应为 1");
+    assert!(!quest.name.is_empty(), "name 应非空");
+    assert!(!quest.desc.is_empty(), "desc 应非空 (扩展字段), 实际: {:?}", quest.desc);
+    assert_eq!(quest.progress, 0, "新接任务 progress 应为 0");
+    assert_eq!(quest.target, 5, "target 应为 5 (杀5只史莱姆)");
+    assert!(!quest.completed, "新接任务 completed 应为 false");
+}
+
+/// TDD: CombatResult (6001) 空挥变体 — swing=true
+/// Given: 玩家攻击不存在的目标 (target_uid=0)
+/// When: 触发 handle_attack
+/// Then: 6001 payload 解码后 swing=true, target_uid=0, attacker_uid=玩家UID
+#[test]
+fn test_combat_result_proto_swing_variant() {
+    use logic_lib::game_proto as gp;
+    use prost::Message;
+
+    let state = GameState::test_new();
+    add_test_player(&state, 70006, 500.0, 500.0);
+    if let Some(mut p) = state.players.get_mut(&70006) {
+        p.skill_cooldowns.clear();
+    }
+
+    // 攻击不存在的目标 (target_uid=999999) — 应触发空挥分支
+    let resp = state.handle_attack(70006, 1, 999999);
+    let swing_msg = resp.iter().find(|m| m.msg_id == 6001)
+        .expect("空挥应返回 6001");
+    assert_ne!(swing_msg.payload.first(), Some(&0x7B),
+        "6001 应为 proto 编码");
+    let decoded = gp::CombatResult::decode(&swing_msg.payload[..])
+        .expect("6001 payload 应可被 CombatResult 解码");
+    // 空挥变体: swing=true, target_uid=0, attacker_uid=玩家
+    assert!(decoded.swing, "swing 应为 true (空挥变体)");
+    assert_eq!(decoded.target_uid, 0, "空挥 target_uid 应为 0");
+    assert_eq!(decoded.attacker_uid, 70006, "attacker_uid 应为玩家 UID");
+    assert!(!decoded.miss, "空挥 miss 应为 false (区别于 miss 变体)");
+    assert_eq!(decoded.skill_id, 1, "skill_id 应为 1 (普攻)");
+    assert!(decoded.damage > 0, "空挥 damage 应 > 0 (基于玩家攻击力)");
+    // reason 应为空字符串（空挥不是错误）
+    assert!(decoded.reason.is_empty(), "空挥 reason 应为空");
+}
+
+// ════════════════════════════════════════════════════════════════
+// v0.8 配置数据层测试 — JSON 加载 + const fallback + 9100 下发
+// ════════════════════════════════════════════════════════════════
+
+/// TDD: GameConfig::load() 应返回非空配置（JSON 存在则读 JSON，否则用 const fallback）
+#[test]
+fn test_config_loader_loads_json_files() {
+    let cfg = super::config_loader::GameConfig::load();
+    assert!(!cfg.skills.is_empty(), "技能配置不应为空");
+    assert!(!cfg.mobs.is_empty(), "怪物配置不应为空");
+    assert!(!cfg.items.is_empty(), "物品配置不应为空");
+    assert!(!cfg.quests.is_empty(), "任务配置不应为空");
+    assert!(!cfg.classes.is_empty(), "职业配置不应为空");
+    assert!(!cfg.talents.is_empty(), "天赋配置不应为空");
+    assert!(!cfg.npcs.is_empty(), "NPC 配置不应为空");
+    assert!(!cfg.maps.is_empty(), "地图配置不应为空");
+    assert!(!cfg.shop_items.is_empty(), "商店配置不应为空");
+}
+
+/// TDD: 配置数据值正确（火球术 mp_cost=20, range=200.0）
+#[test]
+fn test_config_loader_skill_data_correct() {
+    let cfg = super::config_loader::GameConfig::load();
+    let fireball = cfg.skills.iter().find(|s| s.id == 3);
+    assert!(fireball.is_some(), "火球术 (id=3) 应存在");
+    let f = fireball.unwrap();
+    assert_eq!(f.name, "火球术");
+    assert_eq!(f.mp_cost, 20);
+    assert_eq!(f.range, 200.0);
+    assert_eq!(f.dmg_multiplier, 3.0);
+}
+
+/// TDD: 怪物配置数据正确（哥布林 max_hp=80, exp=35）
+#[test]
+fn test_config_loader_mob_data_correct() {
+    let cfg = super::config_loader::GameConfig::load();
+    let goblin = cfg.mobs.iter().find(|m| m.id == 2);
+    assert!(goblin.is_some(), "哥布林 (id=2) 应存在");
+    let g = goblin.unwrap();
+    assert_eq!(g.name, "哥布林");
+    assert_eq!(g.max_hp, 80);
+    assert_eq!(g.exp, 35);
+    assert_eq!(g.level, 2);
+}
+
+/// TDD: GameConfig::to_json() 应产出可解析为 JSON 对象的字符串，且包含所有数组字段
+#[test]
+fn test_config_to_json_serializable() {
+    let cfg = super::config_loader::GameConfig::load();
+    let json = cfg.to_json();
+    let parsed: serde_json::Value = serde_json::from_str(&json).expect("to_json 应产出合法 JSON");
+    assert!(parsed.get("skills").unwrap().is_array(), "应包含 skills 数组");
+    assert!(parsed.get("mobs").unwrap().is_array(), "应包含 mobs 数组");
+    assert!(parsed.get("items").unwrap().is_array(), "应包含 items 数组");
+    assert!(parsed.get("quests").unwrap().is_array(), "应包含 quests 数组");
+    assert!(parsed.get("classes").unwrap().is_array(), "应包含 classes 数组");
+    assert!(parsed.get("talents").unwrap().is_array(), "应包含 talents 数组");
+    assert!(parsed.get("npcs").unwrap().is_array(), "应包含 npcs 数组");
+    assert!(parsed.get("maps").unwrap().is_array(), "应包含 maps 数组");
+    assert!(parsed.get("shopItems").unwrap().is_array(), "应包含 shopItems 数组");
+}
+
+/// TDD: msg_id=101 请求配置应返回 msg_id=9100 的配置消息，payload 为合法 JSON
+#[test]
+fn test_config_request_returns_config_message() {
+    let state = GameState::test_new();
+    let resp = state.process_message(80001, 101, b"");
+    let config_msg = resp.messages.iter().find(|m| m.msg_id == 9100);
+    assert!(config_msg.is_some(), "应返回 9100 配置消息");
+    let payload = String::from_utf8_lossy(&config_msg.unwrap().payload);
+    let json: serde_json::Value = serde_json::from_str(&payload).expect("9100 payload 应为合法 JSON");
+    assert!(json.get("items").unwrap().is_array(), "9100 payload 应包含 items 数组");
+    assert!(json.get("skills").unwrap().is_array(), "9100 payload 应包含 skills 数组");
+    // 验证具体数据：火球术应在配置里
+    let has_fireball = json.get("skills").unwrap().as_array().unwrap().iter()
+        .any(|s| s.get("id").and_then(|v| v.as_u64()) == Some(3)
+            && s.get("name").and_then(|v| v.as_str()) == Some("火球术"));
+    assert!(has_fireball, "9100 配置应包含火球术");
 }

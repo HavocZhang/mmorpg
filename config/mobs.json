@@ -1,0 +1,10 @@
+[
+  {"id": 1, "name": "史莱姆", "max_hp": 50, "atk": 8, "def": 2, "exp": 20, "level": 1, "radius": 80.0, "detect_range": 120.0, "attack_range": 30.0, "attack_cd_ms": 2000, "move_speed": 0.8},
+  {"id": 2, "name": "哥布林", "max_hp": 80, "atk": 12, "def": 4, "exp": 35, "level": 2, "radius": 100.0, "detect_range": 150.0, "attack_range": 35.0, "attack_cd_ms": 1800, "move_speed": 1.2},
+  {"id": 3, "name": "骷髅战士", "max_hp": 120, "atk": 18, "def": 8, "exp": 60, "level": 4, "radius": 90.0, "detect_range": 140.0, "attack_range": 35.0, "attack_cd_ms": 1500, "move_speed": 1.0},
+  {"id": 4, "name": "暗影法师", "max_hp": 90, "atk": 25, "def": 3, "exp": 80, "level": 5, "radius": 120.0, "detect_range": 200.0, "attack_range": 180.0, "attack_cd_ms": 2200, "move_speed": 0.6},
+  {"id": 5, "name": "岩石巨人", "max_hp": 300, "atk": 30, "def": 20, "exp": 200, "level": 8, "radius": 60.0, "detect_range": 100.0, "attack_range": 40.0, "attack_cd_ms": 2500, "move_speed": 0.5},
+  {"id": 6, "name": "森林守护者", "max_hp": 1200, "atk": 40, "def": 25, "exp": 500, "level": 12, "radius": 100.0, "detect_range": 200.0, "attack_range": 80.0, "attack_cd_ms": 1500, "move_speed": 1.0},
+  {"id": 7, "name": "沙虫领主", "max_hp": 800, "atk": 55, "def": 15, "exp": 600, "level": 15, "radius": 80.0, "detect_range": 250.0, "attack_range": 60.0, "attack_cd_ms": 1200, "move_speed": 2.0},
+  {"id": 8, "name": "暗黑巫妖王", "max_hp": 2000, "atk": 65, "def": 30, "exp": 1000, "level": 20, "radius": 120.0, "detect_range": 300.0, "attack_range": 200.0, "attack_cd_ms": 1000, "move_speed": 0.8}
+]

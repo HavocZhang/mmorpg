@@ -1,0 +1,12 @@
+[
+  {"id": 1, "name": "铁剑", "item_type": "weapon", "value": 100, "icon": "🗡", "hp_restore": 0, "mp_restore": 0, "atk_bonus": 15, "def_bonus": 0},
+  {"id": 2, "name": "钢剑", "item_type": "weapon", "value": 300, "icon": "⚔", "hp_restore": 0, "mp_restore": 0, "atk_bonus": 30, "def_bonus": 0},
+  {"id": 3, "name": "皮甲", "item_type": "armor", "value": 150, "icon": "🛡", "hp_restore": 0, "mp_restore": 0, "atk_bonus": 0, "def_bonus": 10},
+  {"id": 4, "name": "铁甲", "item_type": "armor", "value": 400, "icon": "🛡", "hp_restore": 0, "mp_restore": 0, "atk_bonus": 0, "def_bonus": 25},
+  {"id": 5, "name": "力量戒指", "item_type": "accessory", "value": 200, "icon": "💍", "hp_restore": 0, "mp_restore": 0, "atk_bonus": 10, "def_bonus": 5},
+  {"id": 6, "name": "生命药水", "item_type": "potion", "value": 50, "icon": "🧪", "hp_restore": 50, "mp_restore": 0, "atk_bonus": 0, "def_bonus": 0},
+  {"id": 7, "name": "法力药水", "item_type": "potion", "value": 50, "icon": "🔵", "hp_restore": 0, "mp_restore": 30, "atk_bonus": 0, "def_bonus": 0},
+  {"id": 8, "name": "全恢复药水", "item_type": "potion", "value": 150, "icon": "💎", "hp_restore": 100, "mp_restore": 50, "atk_bonus": 0, "def_bonus": 0},
+  {"id": 9, "name": "史莱姆凝胶", "item_type": "material", "value": 10, "icon": "🟢", "hp_restore": 0, "mp_restore": 0, "atk_bonus": 0, "def_bonus": 0},
+  {"id": 10, "name": "哥布林耳朵", "item_type": "material", "value": 15, "icon": "👂", "hp_restore": 0, "mp_restore": 0, "atk_bonus": 0, "def_bonus": 0}
+]
