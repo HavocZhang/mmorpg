@@ -32,16 +32,10 @@ pub struct AppSection {
 pub struct GateSection {
     pub tcp_bind: String,
     pub tcp_port: u16,
-    #[serde(default = "default_ws_port")]
-    pub ws_port: u16,
     pub http_bind: String,
     pub http_port: u16,
     pub node_id: u64,
     pub node_name: String,
-}
-
-fn default_ws_port() -> u16 {
-    7890
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -149,7 +143,6 @@ impl AppConfig {
             gate: GateSection {
                 tcp_bind: get("GATE_TCP_BIND", "0.0.0.0"),
                 tcp_port: get_u16("GATE_TCP_PORT", 7888),
-                ws_port: get_u16("GATE_WS_PORT", 7890),
                 http_bind: get("GATE_HTTP_BIND", "0.0.0.0"),
                 http_port: get_u16("GATE_HTTP_PORT", 9090),
                 node_id: get_u64("GATE_NODE_ID", 1),
